@@ -195,8 +195,8 @@ class DocumentFormatter:
         parts.append(self._get_text(self.g.gen_suffix_edit))
         return ''.join(parts) + '.docx'
 
-    def _format_seq(self, seq_num):
-        combo_text = self._get_current_text(self.g.seq_type_combo)
+    def _format_seq_with_source(self, seq_num, combo):
+        combo_text = self._get_current_text(combo)
         if combo_text in ["数字1、2、3", "数字"]:
             return str(seq_num)
         elif combo_text in ["数字01、02、03", "01格式"]:
@@ -206,6 +206,9 @@ class DocumentFormatter:
                 return self.CHINESE_NUMS[seq_num - 1]
             return str(seq_num)
         return str(seq_num)
+
+    def _format_seq(self, seq_num):
+        return self._format_seq_with_source(seq_num, self.g.seq_type_combo)
 
     # ====================== 日期计算 =============================
 
@@ -311,6 +314,21 @@ class DocumentFormatter:
             new_run.bold = run.bold
             new_run.italic = run.italic
             new_run.underline = run.underline
+            # 正文字体强制覆盖
+            if self._get_bool(getattr(self.g, 'enforce_body_font', False)):
+                try:
+                    new_run.font.name = 'Times New Roman'
+                    r = new_run._element
+                    rPr = r.get_or_add_rPr()
+                    rFonts = rPr.find(qn('w:rFonts'))
+                    if rFonts is None:
+                        rFonts = OxmlElement('w:rFonts')
+                        rPr.insert(0, rFonts)
+                    rFonts.set(qn('w:ascii'), 'Times New Roman')
+                    rFonts.set(qn('w:hAnsi'), 'Times New Roman')
+                    rFonts.set(qn('w:eastAsia'), '宋体')
+                except Exception:
+                    pass
         if not src_para.runs and text:
             p.add_run(text)
 
@@ -331,7 +349,8 @@ class DocumentFormatter:
         if self._get_bool(getattr(self.g, 'header_enable_check', True)):
             self._add_header_line(doc, self.g)
         if self._get_bool(getattr(self.g, 'main_enable_check', True)):
-            self._add_main_title_line(doc, self.g, seq_display)
+            main_seq_display = self._format_seq_with_source(seq_num, self.g.main_seq_type)
+            self._add_main_title_line(doc, self.g, main_seq_display)
         sub_enabled = getattr(self.g, 'enable_sub_cb', None)
         if sub_enabled is None:
             sub_enabled = getattr(self.g, 'sub_enable_check', True)
@@ -373,7 +392,8 @@ class DocumentFormatter:
         p = doc.add_paragraph()
         self._apply_para_format(p, g, 'sub')
         if text:
-            p.add_run(text)
+            run = p.add_run(text)
+            self._apply_run_format(run, g, 'sub')
 
     # ====================== 页面格式 =============================
 
@@ -382,126 +402,317 @@ class DocumentFormatter:
         g = self.g
 
         # 纸张
-        page_w, page_h = self._parse_paper_size(self._get_text(g.paper_size))
+        page_w, page_h = self._parse_paper_size(self._get_attr_text(g.paper_size))
         if page_w and page_h:
             section.page_width = page_w
             section.page_height = page_h
 
         # 页边距
-        for attr, default in [('margin_top', 2.54), ('margin_bottom', 2.54),
-                               ('margin_left', 3.18), ('margin_right', 3.18)]:
+        # 页边距 (GUI名 -> python-docx节属性名)
+        margin_map = {'margin_top': 'top_margin', 'margin_bottom': 'bottom_margin',
+                      'margin_left': 'left_margin', 'margin_right': 'right_margin'}
+        for gui_name, default in [('margin_top', 2.54), ('margin_bottom', 2.54),
+                                   ('margin_left', 3.18), ('margin_right', 3.18)]:
             try:
-                val = float(getattr(g, attr, default) or default)
-                setattr(section, attr, Cm(val))
+                val = float(getattr(g, gui_name, default) or default)
+                section_attr = margin_map[gui_name]
+                setattr(section, section_attr, Cm(val))
             except Exception:
-                setattr(section, attr, Cm(default))
+                setattr(section, margin_map[gui_name], Cm(default))
 
-        # 页眉(左+右同行，制表位右对齐)
+        # 计算右对齐制表位(相对页边缘)
+        _pw = section.page_width
+        _mr = section.right_margin
+        _emu_per_twip = 914400 / 1440
+        _right_tab = int((_pw - _mr) / _emu_per_twip)
+
+        # 页眉(左+右同行，右对齐制表位)
         header = section.header
         header.is_linked_to_previous = False
         left_text = self._get_text(g.header_left_edit)
         right_text = self._get_text(g.header_right_edit)
         hp = header.paragraphs[0]
-        if left_text and right_text:
-            hp.text = left_text + chr(9) + right_text
-        elif left_text:
-            hp.text = left_text
-        elif right_text:
-            hp.text = right_text
+        hp.clear()
         if left_text or right_text:
             from docx.oxml import OxmlElement
             pPr = hp._element.get_or_add_pPr()
             tabs_el = OxmlElement('w:tabs')
-            tab_el = OxmlElement('w:tab')
-            tab_el.set(qn('w:val'), 'right')
-            tab_el.set(qn('w:pos'), '9072')
-            tabs_el.append(tab_el)
+            tab_r = OxmlElement('w:tab')
+            tab_r.set(qn('w:val'), 'right')
+            tab_r.set(qn('w:pos'), str(_right_tab))
+            tabs_el.append(tab_r)
             pPr.append(tabs_el)
+            if left_text:
+                r1 = hp.add_run(left_text)
+                self._apply_run_format(r1, g, 'header_footer')
+            if left_text and right_text:
+                hp.add_run(chr(9))
+            if right_text:
+                r2 = hp.add_run(right_text)
+                self._apply_run_format(r2, g, 'header_footer')
             hp.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-        # 页脚(左+右同行，制表位右对齐)
+        # 页脚(左+右+页码共存)
         footer = section.footer
         footer.is_linked_to_previous = False
         fl_text = self._get_text(g.footer_left_edit)
         fr_text = self._get_text(g.footer_right_edit)
         fp = footer.paragraphs[0]
-        if fl_text and fr_text:
-            fp.text = fl_text + chr(9) + fr_text
-        elif fl_text:
-            fp.text = fl_text
-        elif fr_text:
-            fp.text = fr_text
-        if fl_text or fr_text:
-            from docx.oxml import OxmlElement
+        fp.clear()
+        if self._get_bool(g.insert_page_check):
+            self._build_footer_with_page(fp, g, section, fl_text, fr_text)
+        elif fl_text or fr_text:
+            fp.clear()
             pPr = fp._element.get_or_add_pPr()
             tabs_el = OxmlElement('w:tabs')
-            tab_el = OxmlElement('w:tab')
-            tab_el.set(qn('w:val'), 'right')
-            tab_el.set(qn('w:pos'), '9072')
-            tabs_el.append(tab_el)
+            tab_r = OxmlElement('w:tab')
+            tab_r.set(qn('w:val'), 'right')
+            tab_r.set(qn('w:pos'), str(_right_tab))
+            tabs_el.append(tab_r)
             pPr.append(tabs_el)
+            if fl_text:
+                r1 = fp.add_run(fl_text)
+                self._apply_run_format(r1, g, 'header_footer')
+            if fl_text and fr_text:
+                fp.add_run(chr(9))
+            if fr_text:
+                r2 = fp.add_run(fr_text)
+                self._apply_run_format(r2, g, 'header_footer')
             fp.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-        # 页码
-        if self._get_bool(g.insert_page_check):
-            self._add_page_number(section, g)
+    def _build_footer_with_page(self, fp, g, section, fl_text, fr_text):
+        """构建包含左文本+页码+右文本的页脚段落（制表位法，pos相对页边缘）"""
+        from docx.oxml import OxmlElement
+        pw = section.page_width      # EMU
+        ml = section.left_margin     # EMU
+        mr = section.right_margin    # EMU
+        emu_per_twip = 914400 / 1440
 
-    def _add_page_number(self, section, g):
-        footer = section.footer
-        footer.is_linked_to_previous = False
-        paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-        paragraph.clear()
+        # 制表位位置 = 相对于页面左边缘(twip)
+        center_tab = int(pw / 2 / emu_per_twip)           # 页面中心
+        _right_tab  = int((pw - mr) / emu_per_twip)        # 正文区右边界
 
-        all_runs = []
+        style = self._get_attr_text(getattr(g, 'page_style', ''))
+        subject = self._get_text(getattr(g, 'subject_name_edit', ''))
+        page_pos = self._get_text(g.page_position)
+        need_numpages = '共y页' in style or '/y' in style
 
-        # 页码前缀
-        prefix = self._get_text(getattr(g, 'page_prefix_edit', ''))
-        if prefix:
-            r = paragraph.add_run(prefix)
-            self._apply_run_format(r, g, 'page')
-            all_runs.append(r)
+        def add_page_number():
+            if style == "科目  第x页  共y页":
+                if subject:  fp.add_run(subject + "  ")
+                fp.add_run("第")
+                self._add_page_field_run(fp, g)
+                fp.add_run("页  共")
+                self._add_numpages_field_run(fp, g)
+                fp.add_run("页")
+            elif style == "科目  x/y":
+                if subject:  fp.add_run(subject + "  ")
+                self._add_page_field_run(fp, g)
+                fp.add_run("/")
+                self._add_numpages_field_run(fp, g)
+            elif style == "科目  x":
+                if subject:  fp.add_run(subject + "  ")
+                self._add_page_field_run(fp, g)
+            elif style == "第x页  共y页":
+                fp.add_run("第")
+                self._add_page_field_run(fp, g)
+                fp.add_run("页  共")
+                self._add_numpages_field_run(fp, g)
+                fp.add_run("页")
+            elif style == "x/y":
+                self._add_page_field_run(fp, g)
+                fp.add_run("/")
+                self._add_numpages_field_run(fp, g)
+            elif style == "x":
+                self._add_page_field_run(fp, g)
+            else:
+                prefix = self._get_text(getattr(g, 'page_prefix_edit', ''))
+                suffix = self._get_text(getattr(g, 'page_suffix_edit', ''))
+                if prefix:
+                    r = fp.add_run(prefix)
+                    self._apply_run_format(r, g, 'page')
+                self._add_page_field_run(fp, g)
+                if suffix:
+                    r = fp.add_run(suffix)
+                    self._apply_run_format(r, g, 'page')
 
-        run1 = paragraph.add_run()
+        # 无左右文本 → 直接用段落对齐
+        if not fl_text and not fr_text:
+            add_page_number()
+            if '中' in page_pos:
+                fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif '右' in page_pos:
+                fp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            else:
+                fp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            return
+
+        # 有左右文本 → 用制表位精确定位
+        pPr = fp._element.get_or_add_pPr()
+        tabs_el = OxmlElement('w:tabs')
+
+        if '中' in page_pos:
+            # 左文本←左边缘 | TAB | 页码→居中 | TAB | 右文本→右边缘
+            tab_c = OxmlElement('w:tab')
+            tab_c.set(qn('w:val'), 'center')
+            tab_c.set(qn('w:pos'), str(center_tab))
+            tabs_el.append(tab_c)
+            tab_r = OxmlElement('w:tab')
+            tab_r.set(qn('w:val'), 'right')
+            tab_r.set(qn('w:pos'), str(_right_tab))
+            tabs_el.append(tab_r)
+            pPr.append(tabs_el)
+            if fl_text:
+                r1 = fp.add_run(fl_text)
+                self._apply_run_format(r1, g, 'header_footer')
+            fp.add_run(chr(9))
+            add_page_number()
+            if fr_text:
+                fp.add_run(chr(9))
+                r2 = fp.add_run(fr_text)
+                self._apply_run_format(r2, g, 'header_footer')
+
+        elif '右' in page_pos:
+            # 左文本←左边缘 | TAB | 页码+右文本→右边缘
+            tab_r = OxmlElement('w:tab')
+            tab_r.set(qn('w:val'), 'right')
+            tab_r.set(qn('w:pos'), str(_right_tab))
+            tabs_el.append(tab_r)
+            pPr.append(tabs_el)
+            if fl_text:
+                r1 = fp.add_run(fl_text)
+                self._apply_run_format(r1, g, 'header_footer')
+            fp.add_run(chr(9))
+            add_page_number()
+            if fr_text:
+                r2 = fp.add_run(fr_text)
+                self._apply_run_format(r2, g, 'header_footer')
+
+        else:  # 靠左
+            # 左文本+页码←左边缘 | TAB | 右文本→右边缘
+            tab_r = OxmlElement('w:tab')
+            tab_r.set(qn('w:val'), 'right')
+            tab_r.set(qn('w:pos'), str(_right_tab))
+            tabs_el.append(tab_r)
+            pPr.append(tabs_el)
+            if fl_text:
+                r1 = fp.add_run(fl_text)
+                self._apply_run_format(r1, g, 'header_footer')
+            add_page_number()
+            if fr_text:
+                fp.add_run(chr(9))
+                r2 = fp.add_run(fr_text)
+                self._apply_run_format(r2, g, 'header_footer')
+
+        fp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+        # 页码颜色
+        color = self._get_qcolor(g.page_color_btn)
+        if color is not None:
+            rgb = self._qcolor_to_rgb(color)
+            if rgb:
+                for run in fp.runs:
+                    self._set_run_color(run, rgb)
+
+
+    def _build_page_runs(self, fp, g, style, subject, need_numpages):
+        """根据 page_style 在段落中添加页码文本+字段代码"""
+        from docx.oxml import OxmlElement
+
+        if style == "\u79d1\u76ee  \u7b2cx\u9875  \u5171y\u9875":
+            if subject:
+                fp.add_run(subject + "  ")
+            fp.add_run("\u7b2c")
+            self._add_page_field_run(fp, g)
+            fp.add_run("\u9875  \u5171")
+            self._add_numpages_field_run(fp, g)
+            fp.add_run("\u9875")
+        elif style == "\u79d1\u76ee  x/y":
+            if subject:
+                fp.add_run(subject + "  ")
+            self._add_page_field_run(fp, g)
+            fp.add_run("/")
+            self._add_numpages_field_run(fp, g)
+        elif style == "\u79d1\u76ee  x":
+            if subject:
+                fp.add_run(subject + "  ")
+            self._add_page_field_run(fp, g)
+        elif style == "\u7b2cx\u9875  \u5171y\u9875":
+            fp.add_run("\u7b2c")
+            self._add_page_field_run(fp, g)
+            fp.add_run("\u9875  \u5171")
+            self._add_numpages_field_run(fp, g)
+            fp.add_run("\u9875")
+        elif style == "x/y":
+            self._add_page_field_run(fp, g)
+            fp.add_run("/")
+            self._add_numpages_field_run(fp, g)
+        elif style == "x":
+            self._add_page_field_run(fp, g)
+        else:
+            # fallback: 旧版前缀+PAGE+后缀
+            prefix = self._get_text(getattr(g, 'page_prefix_edit', ''))
+            suffix = self._get_text(getattr(g, 'page_suffix_edit', ''))
+            if prefix:
+                r = fp.add_run(prefix)
+                self._apply_run_format(r, g, 'page')
+            self._add_page_field_run(fp, g)
+            if suffix:
+                r = fp.add_run(suffix)
+                self._apply_run_format(r, g, 'page')
+
+    def _add_page_field_run(self, fp, g):
+        from docx.oxml import OxmlElement
+        run1 = fp.add_run()
         fld1 = OxmlElement('w:fldChar')
         fld1.set(qn('w:fldCharType'), 'begin')
         run1._element.append(fld1)
-        all_runs.append(run1)
-
-        run2 = paragraph.add_run()
+        run2 = fp.add_run()
         instr = OxmlElement('w:instrText')
         instr.set(qn('xml:space'), 'preserve')
         instr.text = ' PAGE '
         run2._element.append(instr)
         self._apply_run_format(run2, g, 'page')
-        all_runs.append(run2)
-
-        run3 = paragraph.add_run()
+        run3 = fp.add_run()
         fld2 = OxmlElement('w:fldChar')
         fld2.set(qn('w:fldCharType'), 'end')
         run3._element.append(fld2)
-        all_runs.append(run3)
 
-        # 页码后缀
-        suffix = self._get_text(getattr(g, 'page_suffix_edit', ''))
-        if suffix:
-            r = paragraph.add_run(suffix)
-            self._apply_run_format(r, g, 'page')
-            all_runs.append(r)
+    def _add_numpages_field_run(self, fp, g):
+        from docx.oxml import OxmlElement
+        run1 = fp.add_run()
+        fld1 = OxmlElement('w:fldChar')
+        fld1.set(qn('w:fldCharType'), 'begin')
+        run1._element.append(fld1)
+        run2 = fp.add_run()
+        instr = OxmlElement('w:instrText')
+        instr.set(qn('xml:space'), 'preserve')
+        instr.text = ' NUMPAGES '
+        run2._element.append(instr)
+        self._apply_run_format(run2, g, 'page')
+        run3 = fp.add_run()
+        fld2 = OxmlElement('w:fldChar')
+        fld2.set(qn('w:fldCharType'), 'end')
+        run3._element.append(fld2)
 
-        color = self._get_qcolor(g.page_color_btn)
-        if color is not None:
-            rgb = self._qcolor_to_rgb(color)
-            if rgb:
-                for r in all_runs:
-                    self._set_run_color(r, rgb)
+    def _calc_space_padding(self, left_text, right_text, section):
+        """计算左右文本之间的空格填充数量"""
+        pw = section.page_width  # EMU
+        ml = section.left_margin
+        mr = section.right_margin
+        text_w = (pw - ml - mr) / 914400 * 2.54  # EMU -> cm
 
-        pos = self._get_text(g.page_position)
-        if '中' in pos:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        elif '右' in pos:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        else:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        def char_width_cm(s):
+            w = 0
+            for c in s:
+                w += 0.22 if ord(c) > 127 else 0.11
+            return w
+
+        lw = char_width_cm(left_text) if left_text else 0
+        rw = char_width_cm(right_text) if right_text else 0
+        space_w = 0.10  # 一个空格的宽度(cm)
+        rest = text_w - lw - rw
+        return max(0, int(rest / space_w))
 
     # ====================== 格式辅助 =============================
 

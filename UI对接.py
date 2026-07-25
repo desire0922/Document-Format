@@ -1240,6 +1240,32 @@ class MainWindow(QMainWindow):
         h_page_format.addStretch()
         page_set_layout.addLayout(h_page_format)
         hf_layout.addWidget(self.page_settings_group)
+        # 页眉页脚字体设置
+        hf_font_layout = QHBoxLayout()
+        hf_font_layout.addWidget(QLabel("页眉页脚字体："))
+        self.header_footer_font = QComboBox()
+        self.header_footer_font.addItems(QFontDatabase().families())
+        self.header_footer_font.setCurrentText("宋体")
+        self.header_footer_font.setObjectName("header_footer_font")
+        hf_font_layout.addWidget(self.header_footer_font)
+        hf_font_layout.addSpacing(15)
+        hf_font_layout.addWidget(QLabel("字号："))
+        self.header_footer_font_size = QComboBox()
+        self.header_footer_font_size.addItems([
+            "初号", "小初", "一号", "小一", "二号", "小二", "三号", "小三",
+            "四号", "小四", "五号", "小五", "六号", "小六", "七号", "八号",
+            "8", "9", "10", "11", "12", "14", "16", "18", "20", "22", "24",
+            "26", "28", "30", "36", "48", "72"
+        ])
+        self.header_footer_font_size.setCurrentText("五号")
+        self.header_footer_font_size.setObjectName("header_footer_font_size")
+        hf_font_layout.addWidget(self.header_footer_font_size)
+        hf_font_layout.addSpacing(15)
+        self.header_footer_bold = QCheckBox("加粗")
+        self.header_footer_bold.setObjectName("header_footer_bold")
+        hf_font_layout.addWidget(self.header_footer_bold)
+        hf_font_layout.addStretch()
+        hf_layout.addLayout(hf_font_layout)
         self.insert_page_check.toggled.connect(self.on_insert_page_toggled)
         self.page_position.currentTextChanged.connect(self.on_page_position_changed)
         self.on_insert_page_toggled(self.insert_page_check.isChecked())
@@ -1292,6 +1318,14 @@ class MainWindow(QMainWindow):
         )
         qs_layout.addStretch()
         layout.addWidget(group_question_spacing)
+        # 正文字体强制覆盖
+        hbox_enforce = QHBoxLayout()
+        self.enforce_body_font = QCheckBox("强制覆盖正文字体（中文宋体、英文Times New Roman）")
+        self.enforce_body_font.setChecked(True)
+        self.enforce_body_font.setObjectName("enforce_body_font")
+        hbox_enforce.addWidget(self.enforce_body_font)
+        hbox_enforce.addStretch()
+        layout.addLayout(hbox_enforce)
         tip = QLabel("设置完此标签后请检查输入和选择是否有效和符合要求，然后转到“处理”标签进行文件处理。")
         tip.setStyleSheet("color: gray; font-style: italic;")
         layout.addWidget(tip)
@@ -1397,6 +1431,17 @@ class MainWindow(QMainWindow):
         scroll_layout.addWidget(self.gen_file_container)
         scroll.setWidget(scroll_widget)
         layout.addWidget(scroll)
+        # 排版日志
+        log_group = QGroupBox("排版日志")
+        log_group.setStyleSheet("QGroupBox { border: 1px solid gray; margin-top: 10px; }")
+        log_layout = QVBoxLayout(log_group)
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setObjectName("log_text")
+        self.log_text.setMaximumHeight(160)
+        self.log_text.setStyleSheet("background-color: #f5f5f5; font-family: Consolas, 'Courier New', monospace; font-size: 12px;")
+        log_layout.addWidget(self.log_text)
+        layout.addWidget(log_group)
         # 输出格式
         hbox_format = QHBoxLayout()
         hbox_format.addWidget(QLabel("输出格式："))
@@ -2037,14 +2082,16 @@ class MainWindow(QMainWindow):
         self.update_gen_file_list()
         self.update_button_state()
 
+    
     def start_process(self):
+        self.log_text.clear()
+        self.log_message("开始排版...")
         if self.process_table.rowCount() == 0:
             QMessageBox.warning(self, "警告", "文件列表为空，请先检查输入。")
             return
 
-        # 检查日期是否已验证
         if self.date_status_icon.text() != "\u221a":
-            QMessageBox.warning(self, "警告", "请在\u201c标题\u201d标签页中点击\u201c检查日期\u201d按钮来检查！")
+            QMessageBox.warning(self, "警告", "请在\"标题\"标签页中点击\"检查日期\"按钮来检查！")
             return
         checked_paths = []
         for row in range(self.process_table.rowCount()):
@@ -2062,28 +2109,165 @@ class MainWindow(QMainWindow):
             output_dir = os.path.dirname(checked_paths[0])
         os.makedirs(output_dir, exist_ok=True)
 
+        # 收集期望页数
+        expected_pages = {}
+        if self.gen_pages_check.isChecked() and hasattr(self, 'gen_file_layout'):
+            for i in range(self.gen_file_layout.count()):
+                item = self.gen_file_layout.itemAt(i)
+                if item and item.layout():
+                    lay = item.layout()
+                    for j in range(lay.count()):
+                        child = lay.itemAt(j)
+                        if child and child.widget() and isinstance(child.widget(), QSpinBox):
+                            expected_pages[i] = child.widget().value()
+                            break
+
         from docx_formatter import DocumentFormatter, SourceParseError
         formatter = DocumentFormatter(self)
         success = 0
         fail = 0
         fail_msgs = []
+        output_paths = []
         for src in checked_paths:
+            basename = os.path.basename(src)
+            self.log_message(f"正在处理：{basename}")
+            QApplication.processEvents()
             try:
                 out = formatter.process_file(src, output_dir)
+                output_paths.append(out)
                 success += 1
+                self.log_message(f"已完成 => {os.path.basename(out)}")
             except SourceParseError as e:
                 fail += 1
-                fail_msgs.append(f"{os.path.basename(src)}: 文件名格式不匹配 - {str(e)}")
+                output_paths.append(None)
+                msg = f"文件名格式不匹配 - {str(e)}"
+                fail_msgs.append(f"{basename}: {msg}")
+                self.log_message(f"失败：{basename} - {msg}")
             except Exception as e:
                 fail += 1
-                fail_msgs.append(f"{os.path.basename(src)}: {str(e)}")
+                output_paths.append(None)
+                msg = str(e)
+                fail_msgs.append(f"{basename}: {msg}")
+                self.log_message(f"失败：{basename} - {msg}")
+            QApplication.processEvents()
 
-        msg = f"排版完成：成功 {success} 个，失败 {fail} 个。"
+        # 页数校验
+        mismatches = []
+        if self.gen_pages_check.isChecked() and expected_pages and output_paths:
+            self.log_message("正在验证页数...")
+            QApplication.processEvents()
+            import pythoncom
+            import win32com.client
+            pythoncom.CoInitialize()
+            word_app = None
+            try:
+                try:
+                    word_app = win32com.client.Dispatch("Kwps.Application")
+                except:
+                    try:
+                        word_app = win32com.client.Dispatch("wps.Application")
+                    except:
+                        word_app = win32com.client.Dispatch("Word.Application")
+                word_app.Visible = False
+                for idx, out in enumerate(output_paths):
+                    if out is None:
+                        continue
+                    actual_pages = -1
+                    try:
+                        doc = word_app.Documents.Open(out)
+                        doc.Repaginate()
+                        actual_pages = doc.ComputeStatistics(2)
+                        doc.Close()
+                    except Exception:
+                        actual_pages = -1
+                    expected = expected_pages.get(idx, -1)
+                    if expected > 0 and actual_pages > 0 and actual_pages != expected:
+                        mismatches.append((os.path.basename(out), expected, actual_pages))
+                        self.log_message(f"页数不符：{os.path.basename(out)} 期望{expected}页，实际{actual_pages}页")
+            except Exception as e:
+                self.log_message(f"无法初始化Word/WPS进行页数校验：{str(e)}")
+            finally:
+                if word_app:
+                    word_app.Quit()
+                pythoncom.CoUninitialize()
+
+        # PDF 导出
+        output_format = self.output_format.currentText()
+        if "PDF" in output_format or "两者" in output_format:
+            self.log_message("正在导出PDF...")
+            QApplication.processEvents()
+            import pythoncom
+            import win32com.client
+            pythoncom.CoInitialize()
+            pdf_word = None
+            pdf_success = 0
+            pdf_fail = 0
+            try:
+                try:
+                    pdf_word = win32com.client.Dispatch("Kwps.Application")
+                except:
+                    try:
+                        pdf_word = win32com.client.Dispatch("wps.Application")
+                    except:
+                        pdf_word = win32com.client.Dispatch("Word.Application")
+                pdf_word.Visible = False
+                for out in output_paths:
+                    if out is None:
+                        continue
+                    try:
+                        pdf_path = out.replace('.docx', '.pdf')
+                        doc = pdf_word.Documents.Open(out)
+                        doc.SaveAs(pdf_path, FileFormat=17)
+                        doc.Close()
+                        pdf_success += 1
+                        self.log_message(f"PDF已生成：{os.path.basename(pdf_path)}")
+                    except Exception as e:
+                        pdf_fail += 1
+                        self.log_message(f"PDF导出失败：{os.path.basename(out)} - {str(e)}")
+            except Exception as e:
+                self.log_message(f"无法初始化Word/WPS进行PDF导出：{str(e)}")
+            finally:
+                if pdf_word:
+                    pdf_word.Quit()
+                pythoncom.CoUninitialize()
+            self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
+
+        # 结果汇总
+        result_lines = [f"排版完成：成功 {success} 个，失败 {fail} 个。"]
         if fail_msgs:
-            msg += "\n\n失败详情：\n" + "\n".join(fail_msgs)
-        QMessageBox.information(self, "排版结果", msg)
+            result_lines.append("")
+            result_lines.append("失败详情：")
+            result_lines.extend(fail_msgs)
+        if mismatches:
+            result_lines.append("")
+            result_lines.append(f"页数不符（共{len(mismatches)}个）：")
+            for name, exp, act in mismatches:
+                result_lines.append(f"  {name}：期望{exp}页，实际{act}页")
 
-    # ==================== 辅助方法 ====================
+        msg = "\n".join(result_lines)
+        self.log_message(msg)
+
+        if mismatches:
+            detail_lines = [f"  {name}：期望{exp}页，实际{act}页" for name, exp, act in mismatches]
+            detail = "\n".join(detail_lines)
+            QMessageBox.warning(self, "排版完成（有页数警告）",
+                f"排版完成：成功 {success} 个，失败 {fail} 个。\n\n"
+                f"以下 {len(mismatches)} 个文件的页数与期望不符：\n{detail}")
+        else:
+            QMessageBox.information(self, "排版结果",
+                f"排版完成：成功 {success} 个，失败 {fail} 个。")
+
+    def log_message(self, msg):
+        """向日志框追加消息"""
+        try:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            self.log_text.append(f"[{timestamp}] {msg}")
+            scrollbar = self.log_text.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+        except Exception:
+            pass
+
 
     def pickColor(self, btn):
         color = QColorDialog.getColor()
@@ -2371,6 +2555,9 @@ class MainWindow(QMainWindow):
             ('header_right_edit', self.header_right_edit),
             ('footer_left_edit', self.footer_left_edit),
             ('footer_right_edit', self.footer_right_edit),
+            ('header_footer_font', self.header_footer_font),
+            ('header_footer_font_size', self.header_footer_font_size),
+            ('header_footer_bold', self.header_footer_bold),
             ('insert_page_check', self.insert_page_check),
             ('page_position', self.page_position),
             ('page_style', self.page_style),
@@ -2381,6 +2568,7 @@ class MainWindow(QMainWindow):
             ('page_italic', self.page_italic),
             ('page_color_btn', self.page_color_btn),
             ('paper_size', self.paper_size),
+            ('enforce_body_font', self.enforce_body_font),
             ('question_line_spacing_type', self.question_line_spacing_type),
             ('question_line_spacing_value', self.question_line_spacing_value),
         ]
@@ -2390,6 +2578,7 @@ class MainWindow(QMainWindow):
         # ---- 处理Tab ----
         data['output_format'] = self._get_widget_value(self.output_format)
         data['gen_pages_check'] = self._get_widget_value(self.gen_pages_check)
+        data['log_text'] = {'text': '', 'styleSheet': self.log_text.styleSheet()}
 
         # 保存每个文件的期望页数
         file_pages = {}
