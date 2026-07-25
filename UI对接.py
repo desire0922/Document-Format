@@ -113,12 +113,17 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("试卷排版工具")
-        self.setWindowIcon(QIcon("layout.ico"))
+        if getattr(sys, "frozen", False):
+            icon_path = os.path.join(sys._MEIPASS, "layout.ico")
+        else:
+            icon_path = "layout.ico"
+        self.setWindowIcon(QIcon(icon_path))
         self.setGeometry(100, 100, 1200, 900)
         self.center()
         self.initUI()
         self.examiners = []
         self.reviewers = []
+        self.preset_config_path = None
         self.process_file_list = []
         self.process_file_info = []
 
@@ -226,7 +231,7 @@ class MainWindow(QMainWindow):
         collab_label.setAlignment(Qt.AlignCenter)
         row2.addWidget(collab_label)
         row2.addSpacing(5)
-        qq_label = QLabel("如有疑问，请添加QQ:2165547544")
+        qq_label = QLabel("如有疑问，请添加QQ:3158510381")
         qq_label.setStyleSheet("font-size: 19px; color: #444; font-weight: bold;")
         qq_label.setAlignment(Qt.AlignCenter)
         row2.addWidget(qq_label)
@@ -254,15 +259,15 @@ class MainWindow(QMainWindow):
         text.setReadOnly(True)
         text.setStyleSheet("""
             QTextEdit {
-                font-size: 15px;
-                line-height: 1.8;
+                font-size: 20px;
+                line-height: 2.0;
                 padding: 15px;
                 background-color: #fafafa;
             }
         """)
         help_content = """
 <h2 style="text-align:center; color:#2c3e50; margin-top:5px;">试卷排版工具</h2>
-<p style="text-align:center; color:#555; font-size:16px;">本软件提供试卷批量插入题头、标题、副标题、页眉页脚、设置页面等功能，能大幅提高老师们排版多份试卷时的工作效率。</p>
+<p style="text-align:center; color:#555; font-size:22px;">本软件提供试卷批量插入题头、标题、副标题、页眉页脚、设置页面等功能，能大幅提高老师们排版多份试卷时的工作效率。</p>
 
 <h3 style="color:#2980b9; margin-top:15px;">一、准备工作和文件名设置</h3>
 <p>① 准备好所有的试卷（docx文档格式）并放在一个文件夹里，确保这些试卷文档文件名统一格式为“前缀（+日期）+试卷序号（支持三种序号）+后缀，前后缀可选。试卷文档里只有题目，没有标题；</p>
@@ -271,7 +276,7 @@ class MainWindow(QMainWindow):
 <p>④ 确认无误后点击“检查输入并录入软件”按钮，然后软件会自动检测符合要求的文件，然后录入其中。然后，请转到“标题”标签页。</p>
 
 <h3 style="color:#2980b9; margin-top:15px;">二、标题设置</h3>
-<p style="color:#888; font-size:14px;">注：此处设置的是文档内部开头的标题</p>
+<p style="color:#888; font-size:18px;">注：此处设置的是文档内部开头的标题</p>
 <p>① 请在此标签设置好题头（例如xxx学校xx年级暑假作业）（刚才设置的标题在“页面”中才会被读取，如果需要在标题中显示学科，请手动添加）、主标题、副标题（根据需求来填写，若不需要也可不填，但至少要填其中的一个框）。</p>
 <p>② 关于“出题人、审题人录入”功能：点击按钮后会显示两个大输入框，请老师们在表格或文档中设置好每份试卷的出题人和审题人，一行一个，每行分别对应每份试卷（按照01、02、03……（或其他序号）的顺序排列，然后直接粘贴到输入框中。若不需要，也可以不录入。</p>
 <p>③ 若需设置每份试卷的完成日期，请设置好开始日期、结束日期、休息设置，若无休息，将“休”的天数设置为0，“做”的天数设置为≤试卷份数即可。处理好后，请点击“检查日期”按钮，确认无误后切换到“页面”标签页。</p>
@@ -284,6 +289,9 @@ class MainWindow(QMainWindow):
 <p>② 如果领导有文件页数的要求，软件添加标题后可能页数不符合要求，你可以勾选“设置并检查生成文件的期望页数”然后设置每份文档的期望页数，如果页数统一，可以设置第一项并点击“一键应用第一项页数数据”快速设置。下方的框里显示的是生成文件的列表。</p>
 <p>③ 请根据需要选择输出的格式，支持.docx格式和.pdf格式，也可以两者都输出。</p>
 <p>④ 确认一切无误后，就可以点击“一键排版”按钮开始排版了！</p>
+
+<h3 style="color:#2980b9; margin-top:15px;">五、保存和打开预设</h3>
+<p>如果你不想每次都手动输入大量的内容，可以把所有信息填好并检查后点击“处理”标签页中的“保存当前预设”按钮，然后把配置文件保存起来，下次打开的时候就可以直接在“文件名”标签页中点击“打开预设配置”按钮并浏览你保存的预设配置文件，打开后软件会自动根据保存在文件里的内容填写到对应的位置上，你只需检查并根据实际需要进行微调即可。记得在“文件名”标签页中点击“检查输入并录入软件”按钮以将现有文件录入软件。</p>
 
 <h3 style="color:#e67e22; margin-top:15px;">关于错误文件</h3>
 <p>如果你添加到了不可识别的文件，软件会给出提示，请将其删除，检查好后再添加。若处理失败，请检查文件权限和内容是否有误。</p>
@@ -304,20 +312,36 @@ class MainWindow(QMainWindow):
 
     def initFileTab(self, parent):
         layout = QVBoxLayout(parent)
-        # 顶部提示（调整文字）
         tip_top = QLabel(
-            "💡操作提示：\n"
-            "①输入或浏览当前试卷（确保只含有正文部分）的目录，然后根据现有文件输入文件名前后缀并选择序号类型；\n"
-            "②勾选“日期”并选择日期格式，程序将自动匹配文件名中符合该格式的任意日期；\n"
-            "③点击“检查输入并录入软件”按钮以让程序获取要处理的文件；\n"
-            "④输入生成文件名的前后缀并选择序号类型（可选日期）。\n"
-            "⑤若需另外添加文件或不处理部分文件，请设置完前三个标签页后转到“处理”标签页进行操作。\n"
-            "注：现有文件名是原卷的文件名，供程序读取；\n"
-            "生成文件名是程序排版后输出文件的文件名，一般根据实际教导处安排来填写即可。"
+            "<div style=\"font-size:19px; color:#2a5caa; line-height:1.1;\">"
+            "💡操作提示<b>（用前必看）</b>：<br>"
+            "①输入或浏览当前试卷<b>（确保只含有正文部分）</b>的目录，然后根据现有文件输入文件名前后缀并<b>选择序号类型</b>；<br>"
+            "②如果当前文件名有不同的日期，请<b>勾选“日期”并选择日期格式</b>，程序将自动匹配文件名中符合该格式的任意日期；<br>"
+            "③输入<b>生成文件名</b>的前后缀并选择序号类型（可选日期）；<br>"
+            "④点击<b>“检查输入并录入软件”</b>按钮以让程序获取要处理的文件。<br>"
+            "⑤若需另外添加文件或不处理部分文件，请<b>设置完前三个标签页</b>后转到“处理”标签页进行操作。<br>"
+            "<span style=\"font-size:18px; font-weight:normal; font-style:italic; color:black; font-family:&#39;楷体&#39;, KaiTi, serif;\">"
+            "注：现有文件名是原卷的文件名，供程序读取；<br>"
+            "生成文件名是程序排版后输出文件的文件名，一般根据实际教导处安排来填写即可。<br></span>"
+            "<span style=\"font-size:20px; font-weight:bold; color:red; font-family:&#39;楷体&#39;, KaiTi, serif;\">"
+            "⭐ 完整操作说明请前往“关于我们”标签页中查看。</span>"
+            "</div>"
         )
-        tip_top.setStyleSheet("color: #2a5caa; background-color: #f0f8ff; padding: 8px; border: 1px solid #c0d8e8;")
+        tip_top.setStyleSheet("background-color: #f0f8ff; padding: 8px; border: 1px solid #c0d8e8;")
         tip_top.setWordWrap(True)
         layout.addWidget(tip_top)
+        # ---- 预设配置 ----
+        hbox_config = QHBoxLayout()
+        self.config_path_label = QLabel("未加载预设配置")
+        self.config_path_label.setStyleSheet("color: gray; font-style: italic;")
+        self.config_path_label.setObjectName("config_path_label")
+        hbox_config.addWidget(self.config_path_label)
+        hbox_config.addStretch()
+        load_preset_btn = QPushButton("打开预设配置")
+        load_preset_btn.clicked.connect(self.loadPreset)
+        load_preset_btn.setObjectName("load_preset_btn")
+        hbox_config.addWidget(load_preset_btn)
+        layout.addLayout(hbox_config)
         # 文件夹位置
         hbox1 = QHBoxLayout()
         hbox1.addWidget(QLabel("文件夹位置："))
@@ -377,6 +401,7 @@ class MainWindow(QMainWindow):
         self.orig_seq_type_combo.addItems(["数字1、2、3", "数字01、02、03", "汉字一、二、三"])
         self.orig_seq_type_combo.setObjectName("orig_seq_type_combo")
         self.orig_seq_type_combo.setToolTip("原文件使用的序号格式")
+        hbox2.addWidget(QLabel("原序号类型："))
         hbox2.addWidget(self.orig_seq_type_combo)
         # .docx
         label_docx = QLabel(".docx")
@@ -391,6 +416,11 @@ class MainWindow(QMainWindow):
         self.gen_date_check = QCheckBox("日期")
         self.gen_date_check.setObjectName("gen_date_check")
         hbox4.addWidget(self.gen_date_check)
+        # 前缀
+        self.gen_prefix_edit = QLineEdit()
+        self.gen_prefix_edit.setToolTip("输入生成文件的前缀")
+        self.gen_prefix_edit.setObjectName("gen_prefix_edit")
+        hbox4.addWidget(self.gen_prefix_edit)
         # 日期格式下拉框
         self.gen_date_format = QComboBox()
         self.gen_date_format.addItems([
@@ -402,11 +432,6 @@ class MainWindow(QMainWindow):
         self.gen_date_format.setVisible(False)
         hbox4.addWidget(self.gen_date_format)
         self.gen_date_check.toggled.connect(self.gen_date_format.setVisible)
-        # 前缀
-        self.gen_prefix_edit = QLineEdit()
-        self.gen_prefix_edit.setToolTip("输入生成文件的前缀")
-        self.gen_prefix_edit.setObjectName("gen_prefix_edit")
-        hbox4.addWidget(self.gen_prefix_edit)
         # 序号标签
         label_seq2 = QLabel("+【文件序号】+")
         label_seq2.setAlignment(Qt.AlignCenter)
@@ -984,15 +1009,12 @@ class MainWindow(QMainWindow):
         self.cycle_type_combo.currentTextChanged.connect(on_cycle_changed)
         on_cycle_changed(self.cycle_type_combo.currentText())
 
-        # ---- 4. 行距设置 ----
-        self.enable_sub_line_spacing_cb = QCheckBox("启用副标题行距设置")
-        self.enable_sub_line_spacing_cb.setChecked(True)
-        self.enable_sub_line_spacing_cb.toggled.connect(
-            lambda checked: self.sub_line_spacing_container.setVisible(checked))
         # 对齐方式
         hbox_sub_align = QHBoxLayout()
+        hbox_sub_align.setSpacing(0)
         hbox_sub_align.addWidget(QLabel("对齐方式："))
         self.sub_align = QComboBox()
+        hbox_sub_align.addWidget(self.sub_align)
         self.sub_align.addItems(["左对齐", "右对齐", "居中", "两端对齐", "分散对齐"])
         self.sub_align.setCurrentText("居中")
         self.sub_align.setObjectName("sub_align")
@@ -1036,12 +1058,6 @@ class MainWindow(QMainWindow):
         hbox_sub_font.addWidget(self.sub_color_btn)
         sub_layout.addLayout(hbox_sub_font)
 
-        hbox_sub_align.addWidget(self.sub_align)
-        hbox_sub_align.addStretch()
-        sub_layout.addLayout(hbox_sub_align)
-
-        sub_layout.addWidget(self.enable_sub_line_spacing_cb)
-
         self.sub_line_spacing_container = QWidget()
         sub_line_spacing_layout = QVBoxLayout(self.sub_line_spacing_container)
         sub_line_spacing_layout.setContentsMargins(20, 0, 0, 0)
@@ -1075,7 +1091,8 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(group_sub)
 
-        tip = QLabel("设置完此标签后请检查输入是否有效，然后转到“页面”标签进行页面布局设置。")
+        tip = QLabel(
+            "设置完此标签后请检查输入是否有效，点击\u201c检查日期\u201d按钮，然后转到\u201c页面\u201d标签进行页面布局设置。")
         tip.setStyleSheet("color: gray; font-style: italic;")
         layout.addWidget(tip)
         layout.addStretch()
@@ -1389,6 +1406,15 @@ class MainWindow(QMainWindow):
         hbox_format.addWidget(self.output_format)
         hbox_format.addStretch()
         layout.addLayout(hbox_format)
+        # 保存预设按钮
+        hbox_preset = QHBoxLayout()
+        save_preset_btn = QPushButton("保存当前预设")
+        save_preset_btn.clicked.connect(self.savePreset)
+        save_preset_btn.setObjectName("save_preset_btn")
+        hbox_preset.addStretch()
+        hbox_preset.addWidget(save_preset_btn)
+        hbox_preset.addStretch()
+        layout.addLayout(hbox_preset)
         # 一键排版按钮
         self.process_btn = QPushButton("一键排版")
         self.process_btn.setFixedSize(200, 40)
@@ -2015,6 +2041,11 @@ class MainWindow(QMainWindow):
         if self.process_table.rowCount() == 0:
             QMessageBox.warning(self, "警告", "文件列表为空，请先检查输入。")
             return
+
+        # 检查日期是否已验证
+        if self.date_status_icon.text() != "\u221a":
+            QMessageBox.warning(self, "警告", "请在\u201c标题\u201d标签页中点击\u201c检查日期\u201d按钮来检查！")
+            return
         checked_paths = []
         for row in range(self.process_table.rowCount()):
             item = self.process_table.item(row, 0)
@@ -2152,6 +2183,297 @@ class MainWindow(QMainWindow):
         self.reviewers = reviewers
         dialog.accept()
         QMessageBox.information(self, "保存成功", f"已保存 {len(examiners)} 位出题人，{len(reviewers)} 位审题人。")
+
+    # ==================== 预设配置保存/加载 ====================
+
+    def _get_color_name(self, btn):
+        """从颜色按钮的样式表中提取颜色名称"""
+        import re
+        style = btn.styleSheet()
+        m = re.search(r'background-color:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|[a-zA-Z]+)', style)
+        if m:
+            return m.group(1)
+        return "black"
+
+    def _set_color_btn(self, btn, color_name):
+        """设置颜色按钮的背景色"""
+        from PyQt5.QtGui import QColor
+        btn.setStyleSheet(f"background-color: {color_name};")
+        color = QColor(color_name)
+        btn.setProperty("color", color)
+
+    def _get_widget_value(self, widget):
+        """获取控件当前值，返回适合JSON序列化的类型"""
+        cls_name = widget.__class__.__name__
+        if cls_name == 'QLineEdit':
+            return widget.text()
+        elif cls_name == 'QComboBox':
+            return widget.currentText()
+        elif cls_name in ('QCheckBox',):
+            return widget.isChecked()
+        elif cls_name == 'QDoubleSpinBox':
+            return widget.value()
+        elif cls_name == 'QSpinBox':
+            return widget.value()
+        elif cls_name == 'QDateEdit':
+            return widget.date().toString("yyyy-MM-dd")
+        elif cls_name == 'QPushButton':
+            return self._get_color_name(widget)
+        elif cls_name == 'QLabel':
+            return {'text': widget.text(), 'styleSheet': widget.styleSheet()}
+        return None
+
+    def _set_widget_value(self, widget, value):
+        """设置控件值，忽略失败"""
+        if value is None:
+            return
+        try:
+            cls_name = widget.__class__.__name__
+            if cls_name == 'QLineEdit':
+                widget.setText(str(value))
+            elif cls_name == 'QComboBox':
+                idx = widget.findText(str(value))
+                if idx >= 0:
+                    widget.setCurrentIndex(idx)
+            elif cls_name in ('QCheckBox',):
+                widget.blockSignals(True)
+                widget.setChecked(bool(value))
+                widget.blockSignals(False)
+            elif cls_name == 'QDoubleSpinBox':
+                widget.setValue(float(value))
+            elif cls_name == 'QSpinBox':
+                widget.setValue(int(value))
+            elif cls_name == 'QDateEdit':
+                from PyQt5.QtCore import QDate
+                widget.setDate(QDate.fromString(str(value), "yyyy-MM-dd"))
+            elif cls_name == 'QPushButton':
+                self._set_color_btn(widget, str(value))
+            elif cls_name == 'QLabel' and isinstance(value, dict):
+                widget.setText(value.get('text', ''))
+                widget.setStyleSheet(value.get('styleSheet', ''))
+        except Exception:
+            pass  # 单个控件加载失败不中断
+
+    def savePreset(self):
+        """保存当前所有设置到JSON文件"""
+        import json
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        from PyQt5.QtCore import QDate
+        from PyQt5.QtWidgets import QLabel, QSpinBox
+
+        default_name = "排版预设.json"
+        if self.preset_config_path:
+            default_name = self.preset_config_path
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "保存预设配置", default_name, "JSON文件 (*.json)"
+        )
+        if not filepath:
+            return
+
+        data = {}
+
+        # ---- 文件名Tab ----
+        tab_widgets_file = [
+            ('folder_edit', self.folder_edit),
+            ('output_folder_edit', self.output_folder_edit),
+            ('orig_date_check', self.orig_date_check),
+            ('orig_prefix_edit', self.orig_prefix_edit),
+            ('orig_date_format', self.orig_date_format),
+            ('orig_suffix_edit', self.orig_suffix_edit),
+            ('orig_seq_type_combo', self.orig_seq_type_combo),
+            ('gen_date_check', self.gen_date_check),
+            ('gen_prefix_edit', self.gen_prefix_edit),
+            ('gen_date_format', self.gen_date_format),
+            ('gen_suffix_edit', self.gen_suffix_edit),
+            ('seq_type_combo', self.seq_type_combo),
+            ('subject_name_edit', self.subject_name_edit),
+        ]
+        for name, w in tab_widgets_file:
+            data[name] = self._get_widget_value(w)
+
+        # ---- 标题Tab ----
+        # Header
+        tab_widgets_title_header = [
+            ('enable_header_cb', self.enable_header_cb),
+            ('header_content_edit', self.header_content_edit),
+            ('header_font', self.header_font),
+            ('header_font_size', self.header_font_size),
+            ('header_bold', self.header_bold),
+            ('header_underline', self.header_underline),
+            ('header_color_btn', self.header_color_btn),
+            ('header_align', self.header_align),
+            ('header_line_spacing_type', self.header_line_spacing_type),
+            ('header_line_spacing_value', self.header_line_spacing_value),
+        ]
+        for name, w in tab_widgets_title_header:
+            data[name] = self._get_widget_value(w)
+
+        # Main title
+        tab_widgets_title_main = [
+            ('enable_main_cb', self.enable_main_cb),
+            ('main_prefix_edit', self.main_prefix_edit),
+            ('main_suffix_edit', self.main_suffix_edit),
+            ('main_seq_type', self.main_seq_type),
+            ('main_font', self.main_font),
+            ('main_font_size', self.main_font_size),
+            ('main_bold', self.main_bold),
+            ('main_underline', self.main_underline),
+            ('main_color_btn', self.main_color_btn),
+            ('main_align', self.main_align),
+            ('main_line_spacing_type', self.main_line_spacing_type),
+            ('main_line_spacing_value', self.main_line_spacing_value),
+        ]
+        for name, w in tab_widgets_title_main:
+            data[name] = self._get_widget_value(w)
+
+        # Sub title
+        tab_widgets_title_sub = [
+            ('enable_sub_cb', self.enable_sub_cb),
+            ('sub_font', self.sub_font),
+            ('sub_font_size', self.sub_font_size),
+            ('sub_bold', self.sub_bold),
+            ('sub_underline', self.sub_underline),
+            ('sub_color_btn', self.sub_color_btn),
+            ('sub_align', self.sub_align),
+            ('sub_line_spacing_type', self.sub_line_spacing_type),
+            ('sub_line_spacing_value', self.sub_line_spacing_value),
+        ]
+        for name, w in tab_widgets_title_sub:
+            data[name] = self._get_widget_value(w)
+
+        # Sub features
+        tab_widgets_sub_features = [
+            ('cycle_type_combo', self.cycle_type_combo),
+            ('start_date', self.start_date),
+            ('end_date', self.end_date),
+            ('enable_examiner_cb', self.enable_examiner_cb),
+            ('enable_date_cb', self.enable_date_cb),
+            ('enable_rest_cb', self.enable_rest_cb),
+            ('rest_do', self.rest_do),
+            ('rest_rest', self.rest_rest),
+            ('date_status_icon', self.date_status_icon),
+        ]
+        for name, w in tab_widgets_sub_features:
+            data[name] = self._get_widget_value(w)
+
+        # Examiners and reviewers
+        data['examiners'] = self.examiners
+        data['reviewers'] = self.reviewers
+
+        # ---- 页面Tab ----
+        tab_widgets_page = [
+            ('margin_top', self.margin_top),
+            ('margin_bottom', self.margin_bottom),
+            ('margin_left', self.margin_left),
+            ('margin_right', self.margin_right),
+            ('header_left_edit', self.header_left_edit),
+            ('header_right_edit', self.header_right_edit),
+            ('footer_left_edit', self.footer_left_edit),
+            ('footer_right_edit', self.footer_right_edit),
+            ('insert_page_check', self.insert_page_check),
+            ('page_position', self.page_position),
+            ('page_style', self.page_style),
+            ('page_font', self.page_font),
+            ('page_font_size', self.page_font_size),
+            ('page_bold', self.page_bold),
+            ('page_underline', self.page_underline),
+            ('page_italic', self.page_italic),
+            ('page_color_btn', self.page_color_btn),
+            ('paper_size', self.paper_size),
+            ('question_line_spacing_type', self.question_line_spacing_type),
+            ('question_line_spacing_value', self.question_line_spacing_value),
+        ]
+        for name, w in tab_widgets_page:
+            data[name] = self._get_widget_value(w)
+
+        # ---- 处理Tab ----
+        data['output_format'] = self._get_widget_value(self.output_format)
+        data['gen_pages_check'] = self._get_widget_value(self.gen_pages_check)
+
+        # 保存每个文件的期望页数
+        file_pages = {}
+        if hasattr(self, 'gen_file_layout') and self.gen_file_layout is not None:
+            for i in range(self.gen_file_layout.count()):
+                item = self.gen_file_layout.itemAt(i)
+                if item and item.layout():
+                    lay = item.layout()
+                    filename_label = None
+                    pages_spin = None
+                    for j in range(lay.count()):
+                        child = lay.itemAt(j)
+                        if child and child.widget():
+                            cw = child.widget()
+                            if isinstance(cw, QLabel) and cw.objectName().startswith('gen_file_label_'):
+                                filename_label = cw
+                            elif isinstance(cw, QSpinBox):
+                                pages_spin = cw
+                    if filename_label and pages_spin is not None:
+                        fname = filename_label.text().strip()
+                        file_pages[fname] = pages_spin.value()
+        data['gen_file_pages'] = file_pages
+
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.preset_config_path = filepath
+            self.config_path_label.setText(f"配置文件：{filepath}")
+            QMessageBox.information(self, "保存成功", f"预设配置已保存到：{filepath}")
+        except Exception as e:
+            QMessageBox.critical(self, "保存失败", f"保存预设时出错：\n{str(e)}")
+
+    def loadPreset(self):
+        """从JSON文件加载预设配置"""
+        import json
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        from PyQt5.QtCore import QDate
+
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "打开预设配置", "", "JSON文件 (*.json)"
+        )
+        if not filepath:
+            return
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "读取失败", f"无法读取配置文件：\n{str(e)}")
+            return
+
+        failed_items = []
+
+        # 执行加载
+        for name, value in data.items():
+            if name in ('examiners', 'reviewers', 'gen_file_pages'):
+                continue
+            widget = getattr(self, name, None)
+            if widget is None:
+                failed_items.append(name)
+                continue
+            try:
+                self._set_widget_value(widget, value)
+            except Exception:
+                failed_items.append(name)
+
+        # 加载出题人、审题人
+        if 'examiners' in data:
+            self.examiners = list(data['examiners'])
+        if 'reviewers' in data:
+            self.reviewers = list(data['reviewers'])
+
+        # 更新config label
+        self.preset_config_path = filepath
+        self.config_path_label.setText(f"配置文件：{filepath}")
+
+        # 报告加载结果
+        if not failed_items:
+            QMessageBox.information(self, "加载成功",
+                                    f"预设配置已从以下文件加载：\n{filepath}\n\n所有设置已成功应用。")
+        else:
+            QMessageBox.warning(self, "部分加载失败",
+                                f"预设配置已从以下文件加载：\n{filepath}\n\n"
+                                f"但以下 {len(failed_items)} 项加载失败：\n" + "、".join(failed_items))
 
     def closeEvent(self, event):
         event.accept()
