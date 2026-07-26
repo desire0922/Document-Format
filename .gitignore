@@ -1,0 +1,8 @@
+﻿# IDE
+.idea/
+
+# Python cache
+__pycache__/
+
+# Generated output
+暑假作业/
