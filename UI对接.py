@@ -2008,7 +2008,7 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "process_file_info") and row < len(self.process_file_info):
                     del self.process_file_info[row]
             self.reorder_table()
-            # 检查是否还有错误文件，若无则重新启用页数设置
+            # 检查是否还有错误文件，若无则重新启用页数设置。
             self._update_error_state()
             self.update_gen_file_list()
 
