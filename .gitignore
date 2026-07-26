@@ -6,3 +6,5 @@ build/
 *.bak
 .DS_Store
 Thumbs.db
+.packaging/
+dist/*.notanexecutable

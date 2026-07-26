@@ -341,6 +341,17 @@ word_exam_formatter_config.json
 - 保存常用排版预设；
 - 自动保存多个 JSON 填充配置方案，并可在界面中一键切换。
 
+## EXE 版本说明
+
+`dist` 目录中保留两个可执行文件：
+
+```text
+语文试卷一键排版.exe              # Win10 / Win11 推荐
+语文试卷一键排版_Win7兼容版.exe   # Win7 / Win10 / Win11 通用兼容版
+```
+
+如果 Windows 7 启动时报 `api-ms-win-core-path-l1-1-0.dll` 缺失，请使用 `Win7兼容版`。该版本使用 Python 3.8.10 32-bit 和 PyInstaller 4.10 打包。
+
 ## 环境要求
 
 - Windows 7、Windows 10 或 Windows 11；
