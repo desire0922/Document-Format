@@ -63,6 +63,8 @@ class FileInfoThread(QThread):
                 except:
                     word_app = win32com.client.Dispatch("Word.Application")
             word_app.Visible = False
+            word_app.DisplayAlerts = 0  # 禁用所有Word对话框
+            word_app.ScreenUpdating = False
             for fullpath in self.file_list:
                 try:
                     if not os.path.exists(fullpath):
@@ -2124,6 +2126,8 @@ class MainWindow(QMainWindow):
                     except:
                         word_app = win32com.client.Dispatch("Word.Application")
                 word_app.Visible = False
+                word_app.DisplayAlerts = 0
+                word_app.ScreenUpdating = False
                 for idx, out in enumerate(output_paths):
                     if out is None:
                         continue
@@ -2166,6 +2170,8 @@ class MainWindow(QMainWindow):
                     except:
                         pdf_word = win32com.client.Dispatch("Word.Application")
                 pdf_word.Visible = False
+                pdf_word.DisplayAlerts = 0
+                pdf_word.ScreenUpdating = False
                 for out in output_paths:
                     if out is None:
                         continue
