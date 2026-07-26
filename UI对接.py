@@ -2147,8 +2147,8 @@ class MainWindow(QMainWindow):
                 pythoncom.CoUninitialize()
 
         # PDF 导出
-        output_format = self.output_format.currentText()
-        if "PDF" in output_format or "两者" in output_format:
+        output_format_index = self.output_format.currentIndex()  # 0=docx, 1=pdf, 2=两者
+        if output_format_index >= 1:
             self.log_message("正在导出PDF...")
             QApplication.processEvents()
             import pythoncom
@@ -2185,6 +2185,20 @@ class MainWindow(QMainWindow):
                 if pdf_word:
                     pdf_word.Quit()
                 pythoncom.CoUninitialize()
+
+            # 当只选PDF时删除中间.docx
+            if output_format_index == 1:
+                deleted = 0
+                for out in output_paths:
+                    if out and os.path.exists(out):
+                        try:
+                            os.remove(out)
+                            deleted += 1
+                        except Exception:
+                            pass
+                if deleted > 0:
+                    self.log_message(f"已删除 {deleted} 个临时.docx文件")
+
             self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
 
         # 结果汇总
