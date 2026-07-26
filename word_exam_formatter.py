@@ -241,7 +241,7 @@ class WordFormatter:
     def _insert_title_before_paragraph(self, p, add_page_break=False):
         if add_page_break: p.insert_paragraph_before("").add_run().add_break()
         line1, line2, line3 = self.title_lines(); p1 = p.insert_paragraph_before(line1); p2 = p.insert_paragraph_before(line2); p3 = p.insert_paragraph_before(line3)
-        self.set_paragraph_text(p1, line1, self.s.small_title_font, self.s.small_title_size, False, WD_ALIGN_PARAGRAPH.CENTER)
+        self.set_paragraph_text(p1, line1, self.s.title_font, self.s.title_size, True, WD_ALIGN_PARAGRAPH.CENTER)
         self.set_paragraph_text(p2, line2, self.s.title_font, self.s.title_size, True, WD_ALIGN_PARAGRAPH.CENTER)
         self.set_paragraph_text(p3, line3, self.s.small_title_font, self.s.small_title_size, False, WD_ALIGN_PARAGRAPH.CENTER)
         p1.paragraph_format.space_after = Pt(2); p2.paragraph_format.space_after = Pt(3); p3.paragraph_format.space_after = Pt(6)
@@ -324,7 +324,7 @@ class ToolTip:
         if self.tip: self.tip.destroy(); self.tip = None
 
 FIELD_HELP = {
-    "title_line_small":"题头第一行，通常写学校、学年学期等信息，字号较小，居中显示。支持 {1}、{2} 编号。",
+    "title_line_small":"题头第一行，通常写学校、学年学期等信息，居中、加粗、三号显示。支持 {1}、{2} 编号。",
     "title_line_big":"题头第二行，通常写年级学科、作业/试卷名称和卷号，字号较大并加粗。支持 {1}、{2} 编号。",
     "setter":"第三行小字中的出题人，可留 xxx，也支持编号占位符。",
     "reviewer":"第三行小字中的审题人，可留 xxx，也支持编号占位符。",
@@ -427,7 +427,7 @@ class App(tk.Tk):
 
     def _build_basic_tab(self, f):
         self.title_entries = {}
-        fields = [("第一行小字","title_line_small","廉江市实验学校 2025—2026学年第二学期"),("第二行大字","title_line_big","高一语文 暑假作业（{1}）卷"),("出题人","setter","xxx"),("审题人","reviewer","xxx"),("使用日期","use_date","2026年7月xx日"),("重复题头标记","marker","[[题头]]")]
+        fields = [("第一行题头","title_line_small","廉江市实验学校 2025—2026学年第二学期"),("第二行大字","title_line_big","高一语文 暑假作业（{1}）卷"),("出题人","setter","xxx"),("审题人","reviewer","xxx"),("使用日期","use_date","2026年7月xx日"),("重复题头标记","marker","[[题头]]")]
         for row, item in enumerate(fields): self.title_entries[item[1]] = self._labeled_entry(f, row, *item)
         f.columnconfigure(2, weight=1); q = tk.Label(f, text="?", width=2, cursor="question_arrow", fg="#2563eb", font=("TkDefaultFont",8,"bold")); q.grid(row=6,column=0,sticky="e",padx=(3,0),pady=4); ToolTip(q, FIELD_HELP["insert_mode"]); ttk.Label(f,text="题头插入方式").grid(row=6,column=1,sticky="e",padx=5,pady=4); ttk.Combobox(f,textvariable=self._var("insert_mode","start_and_markers"),values=["start","markers","start_and_markers","none"],state="readonly").grid(row=6,column=2,sticky="w",padx=5,pady=4); ttk.Label(f,text="start=仅文档开头；markers=仅替换标记；start_and_markers=两者都做；none=不加题头").grid(row=7,column=0,columnspan=3,sticky="w",padx=5)
         seq_box = ttk.LabelFrame(f, text="多组独立编号", padding=6); seq_box.grid(row=8,column=0,columnspan=3,sticky="ew",padx=5,pady=(10,3)); seq_box.columnconfigure(0, weight=1); self.sequence_rules_frame = ttk.Frame(seq_box); self.sequence_rules_frame.grid(row=0,column=0,sticky="ew"); sb = ttk.Frame(seq_box); sb.grid(row=1,column=0,sticky="w",pady=(6,0)); ttk.Button(sb,text="添加编号",command=self.add_sequence_rule_row).pack(side="left"); ttk.Button(sb,text="删除最后一组",command=self.remove_sequence_rule_row).pack(side="left",padx=6); ttk.Label(sb,text="点击右侧 {1}/{2} 可插入到当前光标处").pack(side="left",padx=10); self.add_sequence_rule_row("1"); self.add_sequence_rule_row("001"); ttk.Label(f,text="在题头任意位置写 {1}、{2}、{3}……；每组按自己的首位数分别递增。{} 仍等同于 {1}。").grid(row=9,column=0,columnspan=3,sticky="w",padx=5,pady=(6,0))
