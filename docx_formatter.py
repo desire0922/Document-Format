@@ -455,8 +455,8 @@ class DocumentFormatter:
         # 页脚(左+右+页码共存)
         footer = section.footer
         footer.is_linked_to_previous = False
-        fl_text = self._get_text(g.footer_left_edit)
-        fr_text = self._get_text(g.footer_right_edit)
+        fl_text = ""
+        fr_text = ""
         fp = footer.paragraphs[0]
         fp.clear()
         if self._get_bool(g.insert_page_check):
@@ -494,7 +494,7 @@ class DocumentFormatter:
 
         style = self._get_attr_text(getattr(g, 'page_style', ''))
         subject = self._get_text(getattr(g, 'subject_name_edit', ''))
-        page_pos = self._get_text(g.page_position)
+        page_pos = self._get_attr_text(g.page_position)
         need_numpages = '共y页' in style or '/y' in style
 
         def add_page_number():

@@ -1142,7 +1142,7 @@ class MainWindow(QMainWindow):
         margin_layout.addStretch()
         layout.addWidget(group_margin)
         # 页眉页脚
-        group_header_footer = QGroupBox("页眉设置")
+        group_header_footer = QGroupBox("页眉页脚设置")
         group_header_footer.setStyleSheet("QGroupBox { border: 1px solid gray; margin-top: 10px; }")
         hf_layout = QVBoxLayout(group_header_footer)
         h_header = QHBoxLayout()
@@ -1159,20 +1159,8 @@ class MainWindow(QMainWindow):
         h_header.addWidget(self.header_right_edit)
         h_header.addStretch()
         hf_layout.addLayout(h_header)
-        h_footer = QHBoxLayout()
-        h_footer.addWidget(QLabel("左页脚："))
-        self.footer_left_edit = QLineEdit()
-        self.footer_left_edit.setToolTip("输入左侧页脚内容（可选）")
-        self.footer_left_edit.setObjectName("footer_left_edit")
-        h_footer.addWidget(self.footer_left_edit)
-        h_footer.addSpacing(30)
-        h_footer.addWidget(QLabel("右页脚："))
-        self.footer_right_edit = QLineEdit()
-        self.footer_right_edit.setToolTip("输入右侧页脚内容（可选）")
-        self.footer_right_edit.setObjectName("footer_right_edit")
-        h_footer.addWidget(self.footer_right_edit)
-        h_footer.addStretch()
-        hf_layout.addLayout(h_footer)
+
+
         # 页码
         h_page = QHBoxLayout()
         self.insert_page_check = QCheckBox("插入页码")
@@ -1240,32 +1228,6 @@ class MainWindow(QMainWindow):
         h_page_format.addStretch()
         page_set_layout.addLayout(h_page_format)
         hf_layout.addWidget(self.page_settings_group)
-        # 页眉页脚字体设置
-        hf_font_layout = QHBoxLayout()
-        hf_font_layout.addWidget(QLabel("页眉页脚字体："))
-        self.header_footer_font = QComboBox()
-        self.header_footer_font.addItems(QFontDatabase().families())
-        self.header_footer_font.setCurrentText("宋体")
-        self.header_footer_font.setObjectName("header_footer_font")
-        hf_font_layout.addWidget(self.header_footer_font)
-        hf_font_layout.addSpacing(15)
-        hf_font_layout.addWidget(QLabel("字号："))
-        self.header_footer_font_size = QComboBox()
-        self.header_footer_font_size.addItems([
-            "初号", "小初", "一号", "小一", "二号", "小二", "三号", "小三",
-            "四号", "小四", "五号", "小五", "六号", "小六", "七号", "八号",
-            "8", "9", "10", "11", "12", "14", "16", "18", "20", "22", "24",
-            "26", "28", "30", "36", "48", "72"
-        ])
-        self.header_footer_font_size.setCurrentText("五号")
-        self.header_footer_font_size.setObjectName("header_footer_font_size")
-        hf_font_layout.addWidget(self.header_footer_font_size)
-        hf_font_layout.addSpacing(15)
-        self.header_footer_bold = QCheckBox("加粗")
-        self.header_footer_bold.setObjectName("header_footer_bold")
-        hf_font_layout.addWidget(self.header_footer_bold)
-        hf_font_layout.addStretch()
-        hf_layout.addLayout(hf_font_layout)
         self.insert_page_check.toggled.connect(self.on_insert_page_toggled)
         self.page_position.currentTextChanged.connect(self.on_page_position_changed)
         self.on_insert_page_toggled(self.insert_page_check.isChecked())
@@ -1336,19 +1298,12 @@ class MainWindow(QMainWindow):
         self.page_position.setVisible(checked)
         if not checked:
             self.page_position.setCurrentText("居中")
-            self.footer_left_edit.setEnabled(True)
-            self.footer_right_edit.setEnabled(True)
+
+
+
 
     def on_page_position_changed(self, position):
-        if position == "居中":
-            self.footer_left_edit.setEnabled(True)
-            self.footer_right_edit.setEnabled(True)
-        elif position == "靠左":
-            self.footer_left_edit.setEnabled(False)
-            self.footer_right_edit.setEnabled(True)
-        elif position == "靠右":
-            self.footer_left_edit.setEnabled(True)
-            self.footer_right_edit.setEnabled(False)
+        pass
 
     # ==================== 处理标签页 ====================
 
@@ -2053,7 +2008,7 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "process_file_info") and row < len(self.process_file_info):
                     del self.process_file_info[row]
             self.reorder_table()
-            # 检查是否还有错误文件，若无则重新启用页数设置
+            # 检查是否还有错误文件，若无则重新启用页数设置。
             self._update_error_state()
             self.update_gen_file_list()
 
@@ -2192,8 +2147,8 @@ class MainWindow(QMainWindow):
                 pythoncom.CoUninitialize()
 
         # PDF 导出
-        output_format = self.output_format.currentText()
-        if "PDF" in output_format or "两者" in output_format:
+        output_format_index = self.output_format.currentIndex()  # 0=docx, 1=pdf, 2=两者
+        if output_format_index >= 1:
             self.log_message("正在导出PDF...")
             QApplication.processEvents()
             import pythoncom
@@ -2230,6 +2185,20 @@ class MainWindow(QMainWindow):
                 if pdf_word:
                     pdf_word.Quit()
                 pythoncom.CoUninitialize()
+
+            # 当只选PDF时删除中间.docx
+            if output_format_index == 1:
+                deleted = 0
+                for out in output_paths:
+                    if out and os.path.exists(out):
+                        try:
+                            os.remove(out)
+                            deleted += 1
+                        except Exception:
+                            pass
+                if deleted > 0:
+                    self.log_message(f"已删除 {deleted} 个临时.docx文件")
+
             self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
 
         # 结果汇总
@@ -2553,11 +2522,6 @@ class MainWindow(QMainWindow):
             ('margin_right', self.margin_right),
             ('header_left_edit', self.header_left_edit),
             ('header_right_edit', self.header_right_edit),
-            ('footer_left_edit', self.footer_left_edit),
-            ('footer_right_edit', self.footer_right_edit),
-            ('header_footer_font', self.header_footer_font),
-            ('header_footer_font_size', self.header_footer_font_size),
-            ('header_footer_bold', self.header_footer_bold),
             ('insert_page_check', self.insert_page_check),
             ('page_position', self.page_position),
             ('page_style', self.page_style),
