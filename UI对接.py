@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import os
 import datetime
 
@@ -18,8 +18,8 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal
-from PyQt5.QtGui import QFontDatabase, QColor, QIcon
+from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QUrl
+from PyQt5.QtGui import QFontDatabase, QColor, QIcon, QPixmap, QDesktopServices
 import pythoncom
 import win32com.client
 import re
@@ -61,8 +61,10 @@ class FileInfoThread(QThread):
                 try:
                     word_app = win32com.client.Dispatch("wps.Application")
                 except:
-                    word_app = win32com.client.Dispatch("Word.Application")
+                   word_app = win32com.client.Dispatch("Word.Application")
             word_app.Visible = False
+            word_app.DisplayAlerts = 0  # 禁用所有Word对话框
+            word_app.ScreenUpdating = False
             for fullpath in self.file_list:
                 try:
                     if not os.path.exists(fullpath):
@@ -128,10 +130,26 @@ class MainWindow(QMainWindow):
         self.process_file_info = []
 
     def center(self):
-        qr = self.frameGeometry()
-        cp = QApplication.desktop().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
+        screen = QApplication.primaryScreen()
+        if screen:
+            geometry = screen.availableGeometry()
+            frame = self.frameGeometry()
+            fw, fh = frame.width(), frame.height()
+            # 窗口未显示时 frameGeometry() 不包含标题栏和边框，用 API 估算
+            if fh <= self.height():
+                try:
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    cap = user32.GetSystemMetrics(4)   # SM_CYCAPTION
+                    border = user32.GetSystemMetrics(33)  # SM_CYSIZEFRAME
+                    pad = user32.GetSystemMetrics(92)     # SM_CXPADDEDBORDER
+                    extra = cap + border + pad * 2
+                    fh = self.height() + extra
+                except Exception:
+                    fh = self.height() + 39  # 备用：约 31px 标题栏 + 8px 边框
+            x = geometry.x() + (geometry.width() - fw) // 2
+            y = geometry.y() + (geometry.height() - fh) // 2
+            self.move(x, y)
 
     def initUI(self):
         self.tabs = CustomTabWidget(self)
@@ -189,63 +207,148 @@ class MainWindow(QMainWindow):
         layout.addLayout(h_btn)
         layout.addSpacing(15)
 
-        # Separator
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #ccc;")
-        layout.addWidget(sep)
-        layout.addSpacing(10)
+        # ========== 支持我们 ==========
+        support_box = QFrame()
+        support_box.setStyleSheet("""
+            QFrame {
+                background-color: #e3f2fd;
+                border-radius: 12px;
+            }
+        """)
+        support_box.setMaximumWidth(1160)
+        support_layout = QHBoxLayout(support_box)
+        support_layout.setContentsMargins(30, 25, 40, 25)
+        support_layout.setSpacing(20)
 
-        # Info section
-        info_style = "font-size: 19px; color: #444;"
+        # Left side: text content
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(0)
 
-        # Version
-        row1 = QHBoxLayout()
-        row1.addStretch()
-        v_label = QLabel("版本 V2.14")
-        v_label.setStyleSheet(info_style + " font-weight: bold;")
-        row1.addWidget(v_label)
-        row1.addSpacing(30)
-        d_label = QLabel("更新日期 20260719")
-        d_label.setStyleSheet(info_style)
-        row1.addWidget(d_label)
-        row1.addStretch()
-        layout.addLayout(row1)
+        # Title
+        support_title = QLabel("请支持我们！")
+        support_title.setStyleSheet("font-size: 28px; font-weight: bold; color: #1565c0; font-family: 'Microsoft YaHei', '微软雅黑';")
+        support_title.setFixedHeight(34)
+        text_layout.addWidget(support_title)
+        text_layout.addSpacing(28)
 
-        # Developer info
-        row2 = QVBoxLayout()
-        row2.setAlignment(Qt.AlignCenter)
-        dev_label = QLabel("软件作者：2SHEEP，desire")
-        dev_label.setStyleSheet(info_style)
-        dev_label.setAlignment(Qt.AlignCenter)
-        row2.addWidget(dev_label)
-        # Hyperlink for the third author
-        link_label = QLabel(
-            '<a href="https://space.bilibili.com/650793568" style="color: #0000EE; text-decoration: underline;">三春牛-创客</a>')
-        link_label.setStyleSheet("font-size: 19px; color: #0000EE; text-decoration: underline;")
-        link_label.setOpenExternalLinks(True)
-        link_label.setAlignment(Qt.AlignCenter)
-        row2.addWidget(link_label)
-        collab_label = QLabel("合作完成")
-        collab_label.setStyleSheet(info_style)
-        collab_label.setAlignment(Qt.AlignCenter)
-        row2.addWidget(collab_label)
-        row2.addSpacing(5)
-        qq_label = QLabel("如有疑问，请添加QQ:3158510381")
-        qq_label.setStyleSheet("font-size: 19px; color: #444; font-weight: bold;")
-        qq_label.setAlignment(Qt.AlignCenter)
-        row2.addWidget(qq_label)
-        layout.addLayout(row2)
+        # Description text
+        support_desc = QLabel(
+            "<p style=\"line-height: 1.7; margin: 0;\">作为在校高中生，创作不易，</p>"
+            "<p style=\"line-height: 1.7; margin: 0;\">希望满意的老师们给予一些小小的支持。</p>"
+            "<p style=\"line-height: 1.7; margin: 0;\">您的鼓励是我们不懈前进的动力。</p>")
+        support_desc.setWordWrap(True)
+        support_desc.setStyleSheet("font-size: 22px; color: #2c3e50; font-family: '楷体', 'KaiTi', 'STKaiti';")
+        support_desc.setFixedWidth(480)
+        text_layout.addWidget(support_desc)
+        text_layout.addSpacing(28)
 
-        # Description
-        row3 = QHBoxLayout()
-        row3.addStretch()
-        desc_label = QLabel("本软件仅供学习交流使用，请勿用于商业用途")
-        desc_label.setStyleSheet("font-size: 17px; color: #999;")
-        row3.addWidget(desc_label)
-        row3.addStretch()
-        layout.addLayout(row3)
+        # Tip button
+        tip_btn = QPushButton("❤爱发电")
+        tip_btn.setFixedSize(220, 55)
+        tip_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f06292; color: white; border-radius: 10px;
+                font-size: 20px; font-weight: bold; font-family: 'Microsoft YaHei', '微软雅黑';
+            }
+            QPushButton:hover { background-color: #e91e63; }
+        """)
+        tip_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://ifdian.net/a/desire_1?tab=home")))
+        text_layout.addWidget(tip_btn)
+        text_layout.addStretch()
 
+        # ========== 版本与作者信息 ==========
+        info_box = QFrame()
+        info_box.setStyleSheet("""
+            QFrame {
+                background-color: #e8f5e9;
+                border-radius: 10px;
+            }
+        """)
+        info_layout = QVBoxLayout(info_box)
+        info_layout.setContentsMargins(16, 12, 16, 12)
+        info_layout.setSpacing(10)
+        info_layout.setAlignment(Qt.AlignCenter)
+
+        ib_style = "font-size: 20px; color: #444;"
+
+        # Version row
+        h_ver = QHBoxLayout()
+        h_ver.setAlignment(Qt.AlignCenter)
+        v_tag = QLabel("版本 V2.14")
+        v_tag.setStyleSheet(ib_style + " font-weight: bold;")
+        h_ver.addWidget(v_tag)
+        h_ver.addSpacing(20)
+        d_tag = QLabel("更新日期 20260719")
+        d_tag.setStyleSheet(ib_style)
+        h_ver.addWidget(d_tag)
+        info_layout.addLayout(h_ver)
+
+        # Developer - merged
+        author_title = QLabel("软件作者（合作完成）：")
+        author_title.setStyleSheet("font-size: 20px; color: #444;")
+        author_title.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(author_title)
+
+        author_names = QLabel(
+            '<a href="https://space.bilibili.com/1610128267" style="color: #0000EE; text-decoration: underline;">desire（排版内核）</a>'
+            "、"
+            '<a href="https://space.bilibili.com/650793568" style="color: #0000EE; text-decoration: underline;">三春牛-创客（外观UI）</a>')
+        author_names.setStyleSheet("font-size: 20px; color: #444;")
+        author_names.setOpenExternalLinks(True)
+        author_names.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(author_names)
+
+        qq_tag = QLabel("如有疑问，请添加QQ:3158510381")
+        qq_tag.setStyleSheet("font-size: 20px; color: #444; font-weight: bold;")
+        qq_tag.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(qq_tag)
+
+        # Copyright
+        cp_tag = QLabel("<p style=\"line-height: 1.7; margin: 0;\">本软件仅供学习交流使用，请勿用于商业用途</p>")
+        cp_tag.setStyleSheet("font-size: 16px; color: #888;")
+        cp_tag.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(cp_tag)
+
+        text_layout.addWidget(info_box)
+        text_layout.addStretch()
+
+        text_widget = QWidget()
+        text_widget.setLayout(text_layout)
+        support_layout.addWidget(text_widget)
+        support_layout.addSpacing(15)
+
+        # Right side: tip image (if exists) - supports frozen/packaged mode
+        tip_loaded = False
+        if getattr(sys, "frozen", False):
+            # Packaged: try internal resource first
+            try:
+                tip_path = os.path.join(sys._MEIPASS, "tip.jpg")
+                if os.path.exists(tip_path):
+                    tip_pixmap = QPixmap(tip_path)
+                    if not tip_pixmap.isNull():
+                        tip_loaded = True
+            except Exception:
+                pass
+        if not tip_loaded:
+            # Not packaged or internal failed: try external file
+            tip_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tip.jpg")
+            if os.path.exists(tip_path):
+                tip_pixmap = QPixmap(tip_path)
+                if not tip_pixmap.isNull():
+                    tip_loaded = True
+        if tip_loaded:
+            tip_img = QLabel()
+            tip_pixmap = tip_pixmap.scaled(520, 520, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            tip_img.setPixmap(tip_pixmap)
+            tip_img.setAlignment(Qt.AlignCenter)
+            tip_img.setFixedSize(540, 540)
+            support_layout.addWidget(tip_img)
+        h_box = QHBoxLayout()
+        h_box.addStretch()
+        h_box.addWidget(support_box)
+        h_box.addStretch()
+        layout.addLayout(h_box)
         layout.addStretch()
 
     # ==================== 操作说明 ====================
@@ -760,26 +863,37 @@ class MainWindow(QMainWindow):
             lambda txt: self.header_line_spacing_unit.setText("倍" if txt == "n倍行距" else "磅")
         )
         row1 = QHBoxLayout()
+        h_font_group = QHBoxLayout()
+        h_font_group.addWidget(QLabel("字体："))
+        h_font_group.addWidget(self.header_font)
+        row1.addLayout(h_font_group)
         row1.addSpacing(20)
-        row1.addWidget(QLabel("字体："))
-        row1.addWidget(self.header_font)
-        row1.addSpacing(20)
-        row1.addWidget(QLabel("字号："))
-        row1.addWidget(self.header_font_size)
+        h_size_group = QHBoxLayout()
+        h_size_group.addWidget(QLabel("字号："))
+        h_size_group.addWidget(self.header_font_size)
+        row1.addLayout(h_size_group)
+        row1.addStretch()
         header_layout.addLayout(row1)
         row2 = QHBoxLayout()
-        row2.addWidget(self.header_bold)
-        row2.addWidget(self.header_underline)
-        row2.addWidget(QLabel("字体颜色："))
-        row2.addWidget(self.header_color_btn)
+        h_part1 = QHBoxLayout()
+        h_part1.addWidget(self.header_bold)
+        h_part1.addWidget(self.header_underline)
+        h_part1.addWidget(QLabel("字体颜色："))
+        h_part1.addWidget(self.header_color_btn)
+        row2.addLayout(h_part1)
         row2.addSpacing(20)
-        row2.addWidget(QLabel("对齐方式："))
-        row2.addWidget(self.header_align)
+        h_align_group = QHBoxLayout()
+        h_align_group.addWidget(QLabel("对齐方式："))
+        h_align_group.addWidget(self.header_align)
+        row2.addLayout(h_align_group)
         row2.addSpacing(20)
-        row2.addWidget(QLabel("行距："))
-        row2.addWidget(self.header_line_spacing_type)
-        row2.addWidget(self.header_line_spacing_value)
-        row2.addWidget(self.header_line_spacing_unit)
+        h_spacing_group = QHBoxLayout()
+        h_spacing_group.addWidget(QLabel("行距："))
+        h_spacing_group.addWidget(self.header_line_spacing_type)
+        h_spacing_group.addWidget(self.header_line_spacing_value)
+        h_spacing_group.addWidget(self.header_line_spacing_unit)
+        row2.addLayout(h_spacing_group)
+        row2.addStretch()
         header_layout.addLayout(row2)
         self.header_warning = QLabel("")
         self.header_warning.setStyleSheet("color: red;")
@@ -857,28 +971,42 @@ class MainWindow(QMainWindow):
             lambda txt: self.main_line_spacing_unit.setText("倍" if txt == "n倍行距" else "磅")
         )
         row1_main = QHBoxLayout()
-        row1_main.addWidget(QLabel("序号类型："))
-        row1_main.addWidget(self.main_seq_type)
+        h_seq_group = QHBoxLayout()
+        h_seq_group.addWidget(QLabel("序号类型："))
+        h_seq_group.addWidget(self.main_seq_type)
+        row1_main.addLayout(h_seq_group)
         row1_main.addSpacing(20)
-        row1_main.addWidget(QLabel("字体："))
-        row1_main.addWidget(self.main_font)
+        h_font_group = QHBoxLayout()
+        h_font_group.addWidget(QLabel("字体："))
+        h_font_group.addWidget(self.main_font)
+        row1_main.addLayout(h_font_group)
         row1_main.addSpacing(20)
-        row1_main.addWidget(QLabel("字号："))
-        row1_main.addWidget(self.main_font_size)
+        h_size_group = QHBoxLayout()
+        h_size_group.addWidget(QLabel("字号："))
+        h_size_group.addWidget(self.main_font_size)
+        row1_main.addLayout(h_size_group)
+        row1_main.addStretch()
         main_layout.addLayout(row1_main)
         row2_main = QHBoxLayout()
-        row2_main.addWidget(self.main_bold)
-        row2_main.addWidget(self.main_underline)
-        row2_main.addWidget(QLabel("字体颜色："))
-        row2_main.addWidget(self.main_color_btn)
+        h_part1 = QHBoxLayout()
+        h_part1.addWidget(self.main_bold)
+        h_part1.addWidget(self.main_underline)
+        h_part1.addWidget(QLabel("字体颜色："))
+        h_part1.addWidget(self.main_color_btn)
+        row2_main.addLayout(h_part1)
         row2_main.addSpacing(20)
-        row2_main.addWidget(QLabel("对齐方式："))
-        row2_main.addWidget(self.main_align)
+        h_align_group = QHBoxLayout()
+        h_align_group.addWidget(QLabel("对齐方式："))
+        h_align_group.addWidget(self.main_align)
+        row2_main.addLayout(h_align_group)
         row2_main.addSpacing(20)
-        row2_main.addWidget(QLabel("行距："))
-        row2_main.addWidget(self.main_line_spacing_type)
-        row2_main.addWidget(self.main_line_spacing_value)
-        row2_main.addWidget(self.main_line_spacing_unit)
+        h_spacing_group = QHBoxLayout()
+        h_spacing_group.addWidget(QLabel("行距："))
+        h_spacing_group.addWidget(self.main_line_spacing_type)
+        h_spacing_group.addWidget(self.main_line_spacing_value)
+        h_spacing_group.addWidget(self.main_line_spacing_unit)
+        row2_main.addLayout(h_spacing_group)
+        row2_main.addStretch()
         main_layout.addLayout(row2_main)
         self.main_warning = QLabel("")
         self.main_warning.setStyleSheet("color: red;")
@@ -923,24 +1051,30 @@ class MainWindow(QMainWindow):
         date_layout.setContentsMargins(20, 0, 0, 0)
 
         h_date = QHBoxLayout()
-        h_date.addWidget(QLabel("开始日期："))
+        h_start_group = QHBoxLayout()
+        h_start_group.addWidget(QLabel("开始日期："))
         self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
         self.start_date.setDate(QDate.currentDate())
         self.start_date.setObjectName("start_date")
-        h_date.addWidget(self.start_date)
+        h_start_group.addWidget(self.start_date)
+        h_date.addLayout(h_start_group)
         h_date.addSpacing(20)
-        h_date.addWidget(QLabel("结束日期："))
+        h_end_group = QHBoxLayout()
+        h_end_group.addWidget(QLabel("结束日期："))
         self.end_date = QDateEdit()
         self.end_date.setCalendarPopup(True)
         self.end_date.setDate(QDate.currentDate().addDays(7))
         self.end_date.setObjectName("end_date")
-        h_date.addWidget(self.end_date)
+        h_end_group.addWidget(self.end_date)
+        h_date.addLayout(h_end_group)
+        h_date.addStretch()
         date_layout.addLayout(h_date)
 
         h_date_check = QHBoxLayout()
         self.date_check_btn = QPushButton("检查日期")
-        self.date_check_btn.setFixedSize(80, 25)
+        self.date_check_btn.setFixedSize(120, 38)
+        self.date_check_btn.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #4CAF50; color: white; border-radius: 6px;")
         self.date_check_btn.clicked.connect(self.checkDates)
         h_date_check.addWidget(self.date_check_btn)
         self.date_status_icon = QLabel("×")
@@ -1023,14 +1157,17 @@ class MainWindow(QMainWindow):
 
         # 字体设置
         hbox_sub_font = QHBoxLayout()
-        hbox_sub_font.addWidget(QLabel("字体："))
+        h_sub_font_group = QHBoxLayout()
+        h_sub_font_group.addWidget(QLabel("字体："))
         self.sub_font = QComboBox()
         self.sub_font.addItems(QFontDatabase().families())
         self.sub_font.setCurrentText("\u5b8b\u4f53")
         self.sub_font.setObjectName("sub_font")
-        hbox_sub_font.addWidget(self.sub_font)
+        h_sub_font_group.addWidget(self.sub_font)
+        hbox_sub_font.addLayout(h_sub_font_group)
         hbox_sub_font.addSpacing(20)
-        hbox_sub_font.addWidget(QLabel("字号："))
+        h_sub_size_group = QHBoxLayout()
+        h_sub_size_group.addWidget(QLabel("字号："))
         self.sub_font_size = QComboBox()
         self.sub_font_size.addItems([
             "\u521d\u53f7", "\u5c0f\u521d", "\u4e00\u53f7", "\u5c0f\u4e00", "\u4e8c\u53f7", "\u5c0f\u4e8c",
@@ -1041,21 +1178,25 @@ class MainWindow(QMainWindow):
         ])
         self.sub_font_size.setCurrentText("\u56db\u53f7")
         self.sub_font_size.setObjectName("sub_font_size")
-        hbox_sub_font.addWidget(self.sub_font_size)
+        h_sub_size_group.addWidget(self.sub_font_size)
+        hbox_sub_font.addLayout(h_sub_size_group)
         hbox_sub_font.addSpacing(20)
         self.sub_bold = QCheckBox("\u52a0\u7c97")
         self.sub_bold.setObjectName("sub_bold")
-        hbox_sub_font.addWidget(self.sub_bold)
         self.sub_underline = QCheckBox("\u4e0b\u5212\u7ebf")
         self.sub_underline.setObjectName("sub_underline")
-        hbox_sub_font.addWidget(self.sub_underline)
-        hbox_sub_font.addWidget(QLabel("\u5b57\u4f53\u989c\u8272\uff1a"))
         self.sub_color_btn = QPushButton()
         self.sub_color_btn.setFixedSize(30, 20)
         self.sub_color_btn.setStyleSheet("background-color: black;")
         self.sub_color_btn.clicked.connect(lambda: self.pickColor(self.sub_color_btn))
         self.sub_color_btn.setObjectName("sub_color_btn")
-        hbox_sub_font.addWidget(self.sub_color_btn)
+        h_sub_extra_group = QHBoxLayout()
+        h_sub_extra_group.addWidget(self.sub_bold)
+        h_sub_extra_group.addWidget(self.sub_underline)
+        h_sub_extra_group.addWidget(QLabel("\u5b57\u4f53\u989c\u8272\uff1a"))
+        h_sub_extra_group.addWidget(self.sub_color_btn)
+        hbox_sub_font.addLayout(h_sub_extra_group)
+        hbox_sub_font.addStretch()
         sub_layout.addLayout(hbox_sub_font)
 
         self.sub_line_spacing_container = QWidget()
@@ -2169,6 +2310,8 @@ class MainWindow(QMainWindow):
                     except:
                         word_app = win32com.client.Dispatch("Word.Application")
                 word_app.Visible = False
+                word_app.DisplayAlerts = 0
+                word_app.ScreenUpdating = False
                 for idx, out in enumerate(output_paths):
                     if out is None:
                         continue
@@ -2211,6 +2354,8 @@ class MainWindow(QMainWindow):
                     except:
                         pdf_word = win32com.client.Dispatch("Word.Application")
                 pdf_word.Visible = False
+                pdf_word.DisplayAlerts = 0
+                pdf_word.ScreenUpdating = False
                 for out in output_paths:
                     if out is None:
                         continue
@@ -2231,6 +2376,19 @@ class MainWindow(QMainWindow):
                     pdf_word.Quit()
                 pythoncom.CoUninitialize()
             self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
+            # 当只选PDF时删除中间.docx
+            if output_format == "Portable Document Format（.pdf）":
+                deleted = 0
+                for out in output_paths:
+                    if out and os.path.exists(out):
+                        try:
+                            os.remove(out)
+                            deleted += 1
+                        except Exception:
+                            pass
+                if deleted > 0:
+                    self.log_message(f"已删除 {deleted} 个临时.docx文件")
+
 
         # 结果汇总
         result_lines = [f"排版完成：成功 {success} 个，失败 {fail} 个。"]
@@ -2290,8 +2448,79 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "日期错误", "结束日期必须大于开始日期")
             self.setDateStatusIcon(False)
             return
+
+        # 统计已加载文件数量
+        file_count = len(self.process_file_list)
+
+        if file_count == 0:
+            QMessageBox.warning(self, "日期检查", "没有加载文件，无法计算日期\n请先在\"文件名\"标签页中加载文件")
+            self.setDateStatusIcon(False)
+            return
+
+        mode = self.cycle_type_combo.currentText()
+        dates = []
+
+        if mode == "按正常工作日安排":
+            # 周一至周五工作，周六周日休息
+            current = QDate(start)
+            i = 0
+            while i < file_count:
+                day_of_week = current.dayOfWeek()  # 1=周一, 7=周日
+                if day_of_week <= 5:  # 周一到周五
+                    dates.append(current)
+                    i += 1
+                current = current.addDays(1)
+        else:  # 自定义 - 做N天休M天
+            work_days = self.rest_do.value()
+            rest_days = self.rest_rest.value()
+            if work_days <= 0:
+                QMessageBox.warning(self, "日期错误", "休息设置中\"做\"的天数必须大于0")
+                self.setDateStatusIcon(False)
+                return
+            current = QDate(start)
+            i = 0
+            cycle_pos = 0
+            total_cycle = work_days + rest_days
+            if total_cycle == 0:
+                total_cycle = 1
+            while i < file_count:
+                if cycle_pos < work_days:
+                    dates.append(current)
+                    i += 1
+                    cycle_pos += 1
+                else:
+                    cycle_pos += 1
+                    if cycle_pos >= total_cycle:
+                        cycle_pos = 0
+                current = current.addDays(1)
+
+        last_date = dates[-1]
+        if end < last_date:
+            QMessageBox.warning(self, "日期错误",
+                f"结束日期太早！\n"
+                f"根据当前设置，{file_count}份文件需要安排到 {last_date.toString('yyyy-MM-dd')}。\n"
+                f"请将结束日期设置为 {last_date.toString('yyyy-MM-dd')} 或之后。")
+            self.setDateStatusIcon(False)
+            return
+
+        # 生成日期预览
+        date_preview = []
+        weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+        for idx, d in enumerate(dates):
+            seq = self.process_file_list[idx][1] if idx < len(self.process_file_list) else '?'
+            wd = weekday_names[d.dayOfWeek() - 1]
+            date_preview.append(f"  第{idx+1}份 ({seq}): {d.toString('yyyy-MM-dd')} ({wd})")
+        preview_str = "\n".join(date_preview)
+
         self.setDateStatusIcon(True)
-        QMessageBox.information(self, "日期检查", "日期设置有效")
+        QMessageBox.information(self, "日期检查",
+            f"日期设置有效\n\n"
+            f"开始日期：{start.toString('yyyy-MM-dd')}\n"
+            f"结束日期：{end.toString('yyyy-MM-dd')}\n"
+            f"文件数量：{file_count}\n"
+            f"最后文件日期：{last_date.toString('yyyy-MM-dd')}\n"
+            f"日期计算方式：{mode}\n\n"
+            f"日期安排预览：\n{preview_str}")
 
     def setDateStatusIcon(self, success):
         if success:
@@ -2536,7 +2765,7 @@ class MainWindow(QMainWindow):
             ('enable_rest_cb', self.enable_rest_cb),
             ('rest_do', self.rest_do),
             ('rest_rest', self.rest_rest),
-            ('date_status_icon', self.date_status_icon),
+
         ]
         for name, w in tab_widgets_sub_features:
             data[name] = self._get_widget_value(w)
@@ -2634,7 +2863,7 @@ class MainWindow(QMainWindow):
 
         # 执行加载
         for name, value in data.items():
-            if name in ('examiners', 'reviewers', 'gen_file_pages'):
+            if name in ('examiners', 'reviewers', 'gen_file_pages', 'date_status_icon'):
                 continue
             widget = getattr(self, name, None)
             if widget is None:
