@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("试卷排版工具")
+        self.setWindowTitle("试卷排版工具 V2.5")
         if getattr(sys, "frozen", False):
             icon_path = os.path.join(sys._MEIPASS, "layout.ico")
         else:
@@ -276,11 +276,11 @@ class MainWindow(QMainWindow):
         # Version row
         h_ver = QHBoxLayout()
         h_ver.setAlignment(Qt.AlignCenter)
-        v_tag = QLabel("版本 V2.14")
+        v_tag = QLabel("版本 V2.5")
         v_tag.setStyleSheet(ib_style + " font-weight: bold;")
         h_ver.addWidget(v_tag)
         h_ver.addSpacing(20)
-        d_tag = QLabel("更新日期 20260719")
+        d_tag = QLabel("更新日期 20260727")
         d_tag.setStyleSheet(ib_style)
         h_ver.addWidget(d_tag)
         info_layout.addLayout(h_ver)
@@ -300,7 +300,7 @@ class MainWindow(QMainWindow):
         author_names.setAlignment(Qt.AlignCenter)
         info_layout.addWidget(author_names)
 
-        qq_tag = QLabel("如有疑问，请添加QQ:3158510381")
+        qq_tag = QLabel("如有疑问，请添加QQ:3158510381（三春牛-创客）")
         qq_tag.setStyleSheet("font-size: 20px; color: #444; font-weight: bold;")
         qq_tag.setAlignment(Qt.AlignCenter)
         info_layout.addWidget(qq_tag)
@@ -370,7 +370,7 @@ class MainWindow(QMainWindow):
             }
         """)
         help_content = """
-<h2 style="text-align:center; color:#2c3e50; margin-top:5px;">试卷排版工具</h2>
+<h2 style="text-align:center; color:#2c3e50; margin-top:5px;">试卷排版工具 V2.5</h2>
 <p style="text-align:center; color:#555; font-size:22px;">本软件提供试卷批量插入题头、标题、副标题、页眉页脚、设置页面等功能，能大幅提高老师们排版多份试卷时的工作效率。</p>
 
 <h3 style="color:#2980b9; margin-top:15px;">一、准备工作和文件名设置</h3>
@@ -442,6 +442,7 @@ class MainWindow(QMainWindow):
         hbox_config.addWidget(self.config_path_label)
         hbox_config.addStretch()
         load_preset_btn = QPushButton("打开预设配置")
+        load_preset_btn.setStyleSheet("QPushButton { font-size: 14px; font-weight: bold; background-color: #FF9800; color: white; border-radius: 6px; padding: 8px 16px; } QPushButton:hover { background-color: #E65100; }")
         load_preset_btn.clicked.connect(self.loadPreset)
         load_preset_btn.setObjectName("load_preset_btn")
         hbox_config.addWidget(load_preset_btn)
@@ -578,6 +579,7 @@ class MainWindow(QMainWindow):
         hbox_check = QHBoxLayout()
         self.check_btn = QPushButton("检查输入并录入软件")
         self.check_btn.setFixedSize(500, 60)  # 加大
+        self.check_btn.setStyleSheet("QPushButton { font-size: 20px; font-weight: bold; background-color: #2196F3; color: white; border-radius: 10px; } QPushButton:hover { background-color: #1565C0; }")
         self.check_btn.clicked.connect(self.checkInput)
         hbox_check.addWidget(self.check_btn)
         self.status_icon = QLabel("×")
@@ -843,7 +845,7 @@ class MainWindow(QMainWindow):
         self.header_underline.setObjectName("header_underline")
         self.header_color_btn = QPushButton()
         self.header_color_btn.setFixedSize(30, 20)
-        self.header_color_btn.setStyleSheet("background-color: black;")
+        self.header_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
         self.header_color_btn.clicked.connect(lambda: self.pickColor(self.header_color_btn))
         self.header_color_btn.setObjectName("header_color_btn")
         self.header_align = QComboBox()
@@ -951,7 +953,7 @@ class MainWindow(QMainWindow):
         self.main_underline.setObjectName("main_underline")
         self.main_color_btn = QPushButton()
         self.main_color_btn.setFixedSize(30, 20)
-        self.main_color_btn.setStyleSheet("background-color: black;")
+        self.main_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
         self.main_color_btn.clicked.connect(lambda: self.pickColor(self.main_color_btn))
         self.main_color_btn.setObjectName("main_color_btn")
         self.main_align = QComboBox()
@@ -1075,7 +1077,7 @@ class MainWindow(QMainWindow):
         h_date_check = QHBoxLayout()
         self.date_check_btn = QPushButton("检查日期")
         self.date_check_btn.setFixedSize(120, 38)
-        self.date_check_btn.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #4CAF50; color: white; border-radius: 6px;")
+        self.date_check_btn.setStyleSheet("QPushButton { font-size: 16px; font-weight: bold; background-color: #4CAF50; color: white; border-radius: 6px; } QPushButton:hover { background-color: #2E7D32; }")
         self.date_check_btn.clicked.connect(self.checkDates)
         h_date_check.addWidget(self.date_check_btn)
         self.date_status_icon = QLabel("×")
@@ -1176,7 +1178,7 @@ class MainWindow(QMainWindow):
         self.sub_underline.setObjectName("sub_underline")
         self.sub_color_btn = QPushButton()
         self.sub_color_btn.setFixedSize(30, 20)
-        self.sub_color_btn.setStyleSheet("background-color: black;")
+        self.sub_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
         self.sub_color_btn.clicked.connect(lambda: self.pickColor(self.sub_color_btn))
         self.sub_color_btn.setObjectName("sub_color_btn")
         h_sub_extra_group = QHBoxLayout()
@@ -1350,7 +1352,7 @@ class MainWindow(QMainWindow):
         h_page_format.addWidget(QLabel("字体颜色："))
         self.page_color_btn = QPushButton()
         self.page_color_btn.setFixedSize(30, 20)
-        self.page_color_btn.setStyleSheet("background-color: black;")
+        self.page_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
         self.page_color_btn.clicked.connect(lambda: self.pickColor(self.page_color_btn))
         self.page_color_btn.setObjectName("page_color_btn")
         h_page_format.addWidget(self.page_color_btn)
@@ -1359,7 +1361,7 @@ class MainWindow(QMainWindow):
         hf_layout.addWidget(self.page_settings_group)
         # 页眉页脚字体设置
         hf_font_layout = QHBoxLayout()
-        hf_font_layout.addWidget(QLabel("页眉页脚字体："))
+        hf_font_layout.addWidget(QLabel("页眉字体："))
         self.header_footer_font = QComboBox()
         self.header_footer_font.addItems(QFontDatabase().families())
         self.header_footer_font.setCurrentText("宋体")
@@ -1568,6 +1570,7 @@ class MainWindow(QMainWindow):
         # 保存预设按钮
         hbox_preset = QHBoxLayout()
         save_preset_btn = QPushButton("保存当前预设")
+        save_preset_btn.setStyleSheet("QPushButton { font-size: 14px; font-weight: bold; background-color: #FF9800; color: white; border-radius: 6px; padding: 8px 16px; } QPushButton:hover { background-color: #E65100; }")
         save_preset_btn.clicked.connect(self.savePreset)
         save_preset_btn.setObjectName("save_preset_btn")
         hbox_preset.addStretch()
@@ -1577,6 +1580,7 @@ class MainWindow(QMainWindow):
         # 一键排版按钮
         self.process_btn = QPushButton("一键排版")
         self.process_btn.setFixedSize(200, 40)
+        self.process_btn.setStyleSheet("QPushButton { font-size: 18px; font-weight: bold; background-color: #4CAF50; color: white; border-radius: 8px; } QPushButton:hover { background-color: #2E7D32; }")
         self.process_btn.clicked.connect(self.start_process)
         hbox_process = QHBoxLayout()
         hbox_process.addStretch()
@@ -2334,8 +2338,9 @@ class MainWindow(QMainWindow):
 
         # PDF 导出
         output_format = self.output_format.currentText()
-        if "PDF" in output_format or "两者" in output_format:
-            self.log_message("正在导出PDF...")
+        if ".pdf" in output_format or "两者" in output_format:
+            pdf_files_exist = sum(1 for o in output_paths if o is not None)
+            self.log_message('正在导出PDF...')
             QApplication.processEvents()
             import pythoncom
             import win32com.client
@@ -2616,10 +2621,9 @@ class MainWindow(QMainWindow):
     def _set_color_btn(self, btn, color_name):
         """设置颜色按钮的背景色"""
         from PyQt5.QtGui import QColor
-        btn.setStyleSheet(f"background-color: {color_name};")
+        btn.setStyleSheet(f'QPushButton {{ background-color: {color_name}; border: 1px solid #666; border-radius: 3px; }} QPushButton:hover {{ border: 2px solid white; }}')
         color = QColor(color_name)
         btn.setProperty("color", color)
-
     def _get_widget_value(self, widget):
         """获取控件当前值，返回适合JSON序列化的类型"""
         cls_name = widget.__class__.__name__
@@ -2676,12 +2680,11 @@ class MainWindow(QMainWindow):
         """保存当前所有设置到JSON文件"""
         import json
         from PyQt5.QtWidgets import QFileDialog, QMessageBox
-        from PyQt5.QtCore import QDate
+        from PyQt5.QtCore import QDate, QDateTime
         from PyQt5.QtWidgets import QLabel, QSpinBox
 
-        default_name = "排版预设.json"
-        if self.preset_config_path:
-            default_name = self.preset_config_path
+        now_str = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
+        default_name = "试卷排版工具V2.5_排版预设配置_" + now_str + ".json"
 
         filepath, _ = QFileDialog.getSaveFileName(
             self, "保存预设配置", default_name, "JSON文件 (*.json)"

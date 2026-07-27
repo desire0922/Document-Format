@@ -293,6 +293,20 @@ class DocumentFormatter:
             output_doc.add_paragraph('')
             return
         p = output_doc.add_paragraph()
+        # 应用题目行距设置
+        ls_type = self._get_attr_text(getattr(self.g, 'question_line_spacing_type', ''))
+        ls_value = self._get_attr_text(getattr(self.g, 'question_line_spacing_value', ''))
+        if ls_type and ls_value:
+            try:
+                val = float(ls_value)
+                if '倍' in ls_type:
+                    p.paragraph_format.line_spacing = val
+                elif '固定' in ls_type:
+                    p.paragraph_format.line_spacing = Pt(val)
+                else:
+                    p.paragraph_format.line_spacing = val
+            except Exception:
+                pass
         if src_para.alignment is not None:
             p.alignment = src_para.alignment
         for run in src_para.runs:
@@ -414,7 +428,11 @@ class DocumentFormatter:
         for gui_name, default in [('margin_top', 2.54), ('margin_bottom', 2.54),
                                     ('margin_left', 3.18), ('margin_right', 3.18)]:
             try:
-                val = float(getattr(g, gui_name, default) or default)
+                widget = getattr(g, gui_name, None)
+                if widget is None:
+                    val = default
+                else:
+                    val = float(widget.value() or default)
                 section_attr = margin_map[gui_name]
                 setattr(section, section_attr, Cm(val))
             except Exception:
@@ -485,34 +503,48 @@ class DocumentFormatter:
 
         style = self._get_attr_text(getattr(g, 'page_style', ''))
         subject = self._get_text(getattr(g, 'subject_name_edit', ''))
-        page_pos = self._get_text(g.page_position)
+        page_pos = self._get_attr_text(g.page_position)
         need_numpages = '共y页' in style or '/y' in style
 
         def add_page_number():
             if style == "科目  第x页  共y页":
-                if subject:  fp.add_run(subject + "  ")
-                fp.add_run("第")
+                if subject:
+                    r = fp.add_run(subject + "  ")
+                    self._apply_run_format(r, g, 'page')
+                r = fp.add_run("第")
+                self._apply_run_format(r, g, 'page')
                 self._add_page_field_run(fp, g)
-                fp.add_run("页  共")
+                r = fp.add_run("页  共")
+                self._apply_run_format(r, g, 'page')
                 self._add_numpages_field_run(fp, g)
-                fp.add_run("页")
+                r = fp.add_run("页")
+                self._apply_run_format(r, g, 'page')
             elif style == "科目  x/y":
-                if subject:  fp.add_run(subject + "  ")
+                if subject:
+                    r = fp.add_run(subject + "  ")
+                    self._apply_run_format(r, g, 'page')
                 self._add_page_field_run(fp, g)
-                fp.add_run("/")
+                r = fp.add_run("/")
+                self._apply_run_format(r, g, 'page')
                 self._add_numpages_field_run(fp, g)
             elif style == "科目  x":
-                if subject:  fp.add_run(subject + "  ")
+                if subject:
+                    r = fp.add_run(subject + "  ")
+                    self._apply_run_format(r, g, 'page')
                 self._add_page_field_run(fp, g)
             elif style == "第x页  共y页":
-                fp.add_run("第")
+                r = fp.add_run("第")
+                self._apply_run_format(r, g, 'page')
                 self._add_page_field_run(fp, g)
-                fp.add_run("页  共")
+                r = fp.add_run("页  共")
+                self._apply_run_format(r, g, 'page')
                 self._add_numpages_field_run(fp, g)
-                fp.add_run("页")
+                r = fp.add_run("页")
+                self._apply_run_format(r, g, 'page')
             elif style == "x/y":
                 self._add_page_field_run(fp, g)
-                fp.add_run("/")
+                r = fp.add_run("/")
+                self._apply_run_format(r, g, 'page')
                 self._add_numpages_field_run(fp, g)
             elif style == "x":
                 self._add_page_field_run(fp, g)
@@ -658,6 +690,7 @@ class DocumentFormatter:
         fld1 = OxmlElement('w:fldChar')
         fld1.set(qn('w:fldCharType'), 'begin')
         run1._element.append(fld1)
+        self._apply_run_format(run1, g, 'page')
         run2 = fp.add_run()
         instr = OxmlElement('w:instrText')
         instr.set(qn('xml:space'), 'preserve')
@@ -668,6 +701,7 @@ class DocumentFormatter:
         fld2 = OxmlElement('w:fldChar')
         fld2.set(qn('w:fldCharType'), 'end')
         run3._element.append(fld2)
+        self._apply_run_format(run3, g, 'page')
 
     def _add_numpages_field_run(self, fp, g):
         from docx.oxml import OxmlElement
@@ -675,6 +709,7 @@ class DocumentFormatter:
         fld1 = OxmlElement('w:fldChar')
         fld1.set(qn('w:fldCharType'), 'begin')
         run1._element.append(fld1)
+        self._apply_run_format(run1, g, 'page')
         run2 = fp.add_run()
         instr = OxmlElement('w:instrText')
         instr.set(qn('xml:space'), 'preserve')
@@ -685,6 +720,7 @@ class DocumentFormatter:
         fld2 = OxmlElement('w:fldChar')
         fld2.set(qn('w:fldCharType'), 'end')
         run3._element.append(fld2)
+        self._apply_run_format(run3, g, 'page')
 
     def _calc_space_padding(self, left_text, right_text, section):
         """计算左右文本之间的空格填充数量"""
@@ -729,7 +765,7 @@ class DocumentFormatter:
 
         run.bold = self._get_bool(getattr(g, f'{prefix}_bold', False))
         run.underline = self._get_bool(getattr(g, f'{prefix}_underline', False))
-
+        run.italic = self._get_bool(getattr(g, f'{prefix}_italic', False))
         color = self._get_qcolor(getattr(g, f'{prefix}_color_btn', None))
         if color is not None:
             rgb = self._qcolor_to_rgb(color)
@@ -742,6 +778,10 @@ class DocumentFormatter:
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         elif '右' in align_text:
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        elif '两端对齐' in align_text:
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        elif '分散对齐' in align_text:
+            p.alignment = WD_ALIGN_PARAGRAPH.DISTRIBUTE
         elif '左' in align_text:
             p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         else:
