@@ -454,10 +454,10 @@ class DocumentFormatter:
 
         # 页脚(左+右+页码共存)
         footer = section.footer
-        footer.is_linked_to_previous = False
-        fl_text = self._get_text(g.footer_left_edit)
-        fr_text = self._get_text(g.footer_right_edit)
-        fp = footer.paragraphs[0]
+       footer.is_linked_to_previous = False
+        fl_text = ""
+        fr_text = ""
+       fp = footer.paragraphs[0]
         fp.clear()
         if self._get_bool(g.insert_page_check):
             self._build_footer_with_page(fp, g, section, fl_text, fr_text)
