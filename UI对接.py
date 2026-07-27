@@ -18,8 +18,8 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal
-from PyQt5.QtGui import QFontDatabase, QColor, QIcon
+from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QUrl
+from PyQt5.QtGui import QFontDatabase, QColor, QIcon, QPixmap, QDesktopServices
 import pythoncom
 import win32com.client
 import re
@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("试卷排版工具")
+        self.setWindowTitle("试卷排版工具 V2.5")
         if getattr(sys, "frozen", False):
             icon_path = os.path.join(sys._MEIPASS, "layout.ico")
         else:
@@ -126,14 +126,31 @@ class MainWindow(QMainWindow):
         self.examiners = []
         self.reviewers = []
         self.preset_config_path = None
+        self._preset_gen_file_pages = None
         self.process_file_list = []
         self.process_file_info = []
 
     def center(self):
-        qr = self.frameGeometry()
-        cp = QApplication.desktop().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
+        screen = QApplication.primaryScreen()
+        if screen:
+            geometry = screen.availableGeometry()
+            frame = self.frameGeometry()
+            fw, fh = frame.width(), frame.height()
+            # 窗口未显示时 frameGeometry() 不包含标题栏和边框，用 API 估算
+            if fh <= self.height():
+                try:
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    cap = user32.GetSystemMetrics(4)   # SM_CYCAPTION
+                    border = user32.GetSystemMetrics(33)  # SM_CYSIZEFRAME
+                    pad = user32.GetSystemMetrics(92)     # SM_CXPADDEDBORDER
+                    extra = cap + border + pad * 2
+                    fh = self.height() + extra
+                except Exception:
+                    fh = self.height() + 39  # 备用：约 31px 标题栏 + 8px 边框
+            x = geometry.x() + (geometry.width() - fw) // 2
+            y = geometry.y() + (geometry.height() - fh) // 2
+            self.move(x, y)
 
     def initUI(self):
         self.tabs = CustomTabWidget(self)
@@ -191,63 +208,148 @@ class MainWindow(QMainWindow):
         layout.addLayout(h_btn)
         layout.addSpacing(15)
 
-        # Separator
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #ccc;")
-        layout.addWidget(sep)
-        layout.addSpacing(10)
+        # ========== 支持我们 ==========
+        support_box = QFrame()
+        support_box.setStyleSheet("""
+            QFrame {
+                background-color: #e3f2fd;
+                border-radius: 12px;
+            }
+        """)
+        support_box.setMaximumWidth(1160)
+        support_layout = QHBoxLayout(support_box)
+        support_layout.setContentsMargins(30, 25, 40, 25)
+        support_layout.setSpacing(20)
 
-        # Info section
-        info_style = "font-size: 19px; color: #444;"
+        # Left side: text content
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(0)
 
-        # Version
-        row1 = QHBoxLayout()
-        row1.addStretch()
-        v_label = QLabel("版本 V2.14")
-        v_label.setStyleSheet(info_style + " font-weight: bold;")
-        row1.addWidget(v_label)
-        row1.addSpacing(30)
-        d_label = QLabel("更新日期 20260719")
-        d_label.setStyleSheet(info_style)
-        row1.addWidget(d_label)
-        row1.addStretch()
-        layout.addLayout(row1)
+        # Title
+        support_title = QLabel("请支持我们！")
+        support_title.setStyleSheet("font-size: 28px; font-weight: bold; color: #1565c0; font-family: 'Microsoft YaHei', '微软雅黑';")
+        support_title.setFixedHeight(34)
+        text_layout.addWidget(support_title)
+        text_layout.addSpacing(28)
 
-        # Developer info
-        row2 = QVBoxLayout()
-        row2.setAlignment(Qt.AlignCenter)
-        dev_label = QLabel("软件作者：2SHEEP，desire")
-        dev_label.setStyleSheet(info_style)
-        dev_label.setAlignment(Qt.AlignCenter)
-        row2.addWidget(dev_label)
-        # Hyperlink for the third author
-        link_label = QLabel(
-            '<a href="https://space.bilibili.com/650793568" style="color: #0000EE; text-decoration: underline;">三春牛-创客</a>')
-        link_label.setStyleSheet("font-size: 19px; color: #0000EE; text-decoration: underline;")
-        link_label.setOpenExternalLinks(True)
-        link_label.setAlignment(Qt.AlignCenter)
-        row2.addWidget(link_label)
-        collab_label = QLabel("合作完成")
-        collab_label.setStyleSheet(info_style)
-        collab_label.setAlignment(Qt.AlignCenter)
-        row2.addWidget(collab_label)
-        row2.addSpacing(5)
-        qq_label = QLabel("如有疑问，请添加QQ:3158510381")
-        qq_label.setStyleSheet("font-size: 19px; color: #444; font-weight: bold;")
-        qq_label.setAlignment(Qt.AlignCenter)
-        row2.addWidget(qq_label)
-        layout.addLayout(row2)
+        # Description text
+        support_desc = QLabel(
+            "<p style=\"line-height: 1.7; margin: 0;\">作为在校高中生，创作不易，</p>"
+            "<p style=\"line-height: 1.7; margin: 0;\">希望满意的老师们给予一些小小的支持。</p>"
+            "<p style=\"line-height: 1.7; margin: 0;\">您的鼓励是我们不懈前进的动力。</p>")
+        support_desc.setWordWrap(True)
+        support_desc.setStyleSheet("font-size: 22px; color: #2c3e50; font-family: '楷体', 'KaiTi', 'STKaiti';")
+        support_desc.setFixedWidth(480)
+        text_layout.addWidget(support_desc)
+        text_layout.addSpacing(28)
 
-        # Description
-        row3 = QHBoxLayout()
-        row3.addStretch()
-        desc_label = QLabel("本软件仅供学习交流使用，请勿用于商业用途")
-        desc_label.setStyleSheet("font-size: 17px; color: #999;")
-        row3.addWidget(desc_label)
-        row3.addStretch()
-        layout.addLayout(row3)
+        # Tip button
+        tip_btn = QPushButton("❤爱发电")
+        tip_btn.setFixedSize(220, 55)
+        tip_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f06292; color: white; border-radius: 10px;
+                font-size: 20px; font-weight: bold; font-family: 'Microsoft YaHei', '微软雅黑';
+            }
+            QPushButton:hover { background-color: #e91e63; }
+        """)
+        tip_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://ifdian.net/a/desire_1?tab=home")))
+        text_layout.addWidget(tip_btn)
+        text_layout.addStretch()
 
+        # ========== 版本与作者信息 ==========
+        info_box = QFrame()
+        info_box.setStyleSheet("""
+            QFrame {
+                background-color: #e8f5e9;
+                border-radius: 10px;
+            }
+        """)
+        info_layout = QVBoxLayout(info_box)
+        info_layout.setContentsMargins(16, 12, 16, 12)
+        info_layout.setSpacing(10)
+        info_layout.setAlignment(Qt.AlignCenter)
+
+        ib_style = "font-size: 20px; color: #444;"
+
+        # Version row
+        h_ver = QHBoxLayout()
+        h_ver.setAlignment(Qt.AlignCenter)
+        v_tag = QLabel("版本 V2.5")
+        v_tag.setStyleSheet(ib_style + " font-weight: bold;")
+        h_ver.addWidget(v_tag)
+        h_ver.addSpacing(20)
+        d_tag = QLabel("更新日期 20260727")
+        d_tag.setStyleSheet(ib_style)
+        h_ver.addWidget(d_tag)
+        info_layout.addLayout(h_ver)
+
+        # Developer - merged
+        author_title = QLabel("软件作者（合作完成）：")
+        author_title.setStyleSheet("font-size: 20px; color: #444;")
+        author_title.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(author_title)
+
+        author_names = QLabel(
+            '<a href="https://space.bilibili.com/1610128267" style="color: #0000EE; text-decoration: underline;">desire（排版内核）</a>'
+            "、"
+            '<a href="https://space.bilibili.com/650793568" style="color: #0000EE; text-decoration: underline;">三春牛-创客（外观UI）</a>')
+        author_names.setStyleSheet("font-size: 20px; color: #444;")
+        author_names.setOpenExternalLinks(True)
+        author_names.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(author_names)
+
+        qq_tag = QLabel("如有疑问，请添加QQ:3158510381（三春牛-创客）")
+        qq_tag.setStyleSheet("font-size: 20px; color: #444; font-weight: bold;")
+        qq_tag.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(qq_tag)
+
+        # Copyright
+        cp_tag = QLabel("<p style=\"line-height: 1.7; margin: 0;\">本软件仅供学习交流使用，请勿用于商业用途</p>")
+        cp_tag.setStyleSheet("font-size: 16px; color: #888;")
+        cp_tag.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(cp_tag)
+
+        text_layout.addWidget(info_box)
+        text_layout.addStretch()
+
+        text_widget = QWidget()
+        text_widget.setLayout(text_layout)
+        support_layout.addWidget(text_widget)
+        support_layout.addSpacing(15)
+
+        # Right side: tip image (if exists) - supports frozen/packaged mode
+        tip_loaded = False
+        if getattr(sys, "frozen", False):
+            # Packaged: try internal resource first
+            try:
+                tip_path = os.path.join(sys._MEIPASS, "tip.jpg")
+                if os.path.exists(tip_path):
+                    tip_pixmap = QPixmap(tip_path)
+                    if not tip_pixmap.isNull():
+                        tip_loaded = True
+            except Exception:
+                pass
+        if not tip_loaded:
+            # Not packaged or internal failed: try external file
+            tip_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tip.jpg")
+            if os.path.exists(tip_path):
+                tip_pixmap = QPixmap(tip_path)
+                if not tip_pixmap.isNull():
+                    tip_loaded = True
+        if tip_loaded:
+            tip_img = QLabel()
+            tip_pixmap = tip_pixmap.scaled(520, 520, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            tip_img.setPixmap(tip_pixmap)
+            tip_img.setAlignment(Qt.AlignCenter)
+            tip_img.setFixedSize(540, 540)
+            support_layout.addWidget(tip_img)
+        h_box = QHBoxLayout()
+        h_box.addStretch()
+        h_box.addWidget(support_box)
+        h_box.addStretch()
+        layout.addLayout(h_box)
         layout.addStretch()
 
     # ==================== 操作说明 ====================
@@ -268,7 +370,7 @@ class MainWindow(QMainWindow):
             }
         """)
         help_content = """
-<h2 style="text-align:center; color:#2c3e50; margin-top:5px;">试卷排版工具</h2>
+<h2 style="text-align:center; color:#2c3e50; margin-top:5px;">试卷排版工具 V2.5</h2>
 <p style="text-align:center; color:#555; font-size:22px;">本软件提供试卷批量插入题头、标题、副标题、页眉页脚、设置页面等功能，能大幅提高老师们排版多份试卷时的工作效率。</p>
 
 <h3 style="color:#2980b9; margin-top:15px;">一、准备工作和文件名设置</h3>
@@ -340,6 +442,7 @@ class MainWindow(QMainWindow):
         hbox_config.addWidget(self.config_path_label)
         hbox_config.addStretch()
         load_preset_btn = QPushButton("打开预设配置")
+        load_preset_btn.setStyleSheet("QPushButton { font-size: 14px; font-weight: bold; background-color: #FF9800; color: white; border-radius: 6px; padding: 8px 16px; } QPushButton:hover { background-color: #E65100; }")
         load_preset_btn.clicked.connect(self.loadPreset)
         load_preset_btn.setObjectName("load_preset_btn")
         hbox_config.addWidget(load_preset_btn)
@@ -476,6 +579,7 @@ class MainWindow(QMainWindow):
         hbox_check = QHBoxLayout()
         self.check_btn = QPushButton("检查输入并录入软件")
         self.check_btn.setFixedSize(500, 60)  # 加大
+        self.check_btn.setStyleSheet("QPushButton { font-size: 20px; font-weight: bold; background-color: #2196F3; color: white; border-radius: 10px; } QPushButton:hover { background-color: #1565C0; }")
         self.check_btn.clicked.connect(self.checkInput)
         hbox_check.addWidget(self.check_btn)
         self.status_icon = QLabel("×")
@@ -741,7 +845,7 @@ class MainWindow(QMainWindow):
         self.header_underline.setObjectName("header_underline")
         self.header_color_btn = QPushButton()
         self.header_color_btn.setFixedSize(30, 20)
-        self.header_color_btn.setStyleSheet("background-color: black;")
+        self.header_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
         self.header_color_btn.clicked.connect(lambda: self.pickColor(self.header_color_btn))
         self.header_color_btn.setObjectName("header_color_btn")
         self.header_align = QComboBox()
@@ -762,26 +866,37 @@ class MainWindow(QMainWindow):
             lambda txt: self.header_line_spacing_unit.setText("倍" if txt == "n倍行距" else "磅")
         )
         row1 = QHBoxLayout()
+        h_font_group = QHBoxLayout()
+        h_font_group.addWidget(QLabel("字体："))
+        h_font_group.addWidget(self.header_font)
+        row1.addLayout(h_font_group)
         row1.addSpacing(20)
-        row1.addWidget(QLabel("字体："))
-        row1.addWidget(self.header_font)
-        row1.addSpacing(20)
-        row1.addWidget(QLabel("字号："))
-        row1.addWidget(self.header_font_size)
+        h_size_group = QHBoxLayout()
+        h_size_group.addWidget(QLabel("字号："))
+        h_size_group.addWidget(self.header_font_size)
+        row1.addLayout(h_size_group)
+        row1.addStretch()
         header_layout.addLayout(row1)
         row2 = QHBoxLayout()
-        row2.addWidget(self.header_bold)
-        row2.addWidget(self.header_underline)
-        row2.addWidget(QLabel("字体颜色："))
-        row2.addWidget(self.header_color_btn)
+        h_part1 = QHBoxLayout()
+        h_part1.addWidget(self.header_bold)
+        h_part1.addWidget(self.header_underline)
+        h_part1.addWidget(QLabel("字体颜色："))
+        h_part1.addWidget(self.header_color_btn)
+        row2.addLayout(h_part1)
         row2.addSpacing(20)
-        row2.addWidget(QLabel("对齐方式："))
-        row2.addWidget(self.header_align)
+        h_align_group = QHBoxLayout()
+        h_align_group.addWidget(QLabel("对齐方式："))
+        h_align_group.addWidget(self.header_align)
+        row2.addLayout(h_align_group)
         row2.addSpacing(20)
-        row2.addWidget(QLabel("行距："))
-        row2.addWidget(self.header_line_spacing_type)
-        row2.addWidget(self.header_line_spacing_value)
-        row2.addWidget(self.header_line_spacing_unit)
+        h_spacing_group = QHBoxLayout()
+        h_spacing_group.addWidget(QLabel("行距："))
+        h_spacing_group.addWidget(self.header_line_spacing_type)
+        h_spacing_group.addWidget(self.header_line_spacing_value)
+        h_spacing_group.addWidget(self.header_line_spacing_unit)
+        row2.addLayout(h_spacing_group)
+        row2.addStretch()
         header_layout.addLayout(row2)
         self.header_warning = QLabel("")
         self.header_warning.setStyleSheet("color: red;")
@@ -838,7 +953,7 @@ class MainWindow(QMainWindow):
         self.main_underline.setObjectName("main_underline")
         self.main_color_btn = QPushButton()
         self.main_color_btn.setFixedSize(30, 20)
-        self.main_color_btn.setStyleSheet("background-color: black;")
+        self.main_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
         self.main_color_btn.clicked.connect(lambda: self.pickColor(self.main_color_btn))
         self.main_color_btn.setObjectName("main_color_btn")
         self.main_align = QComboBox()
@@ -859,28 +974,42 @@ class MainWindow(QMainWindow):
             lambda txt: self.main_line_spacing_unit.setText("倍" if txt == "n倍行距" else "磅")
         )
         row1_main = QHBoxLayout()
-        row1_main.addWidget(QLabel("序号类型："))
-        row1_main.addWidget(self.main_seq_type)
+        h_seq_group = QHBoxLayout()
+        h_seq_group.addWidget(QLabel("序号类型："))
+        h_seq_group.addWidget(self.main_seq_type)
+        row1_main.addLayout(h_seq_group)
         row1_main.addSpacing(20)
-        row1_main.addWidget(QLabel("字体："))
-        row1_main.addWidget(self.main_font)
+        h_font_group = QHBoxLayout()
+        h_font_group.addWidget(QLabel("字体："))
+        h_font_group.addWidget(self.main_font)
+        row1_main.addLayout(h_font_group)
         row1_main.addSpacing(20)
-        row1_main.addWidget(QLabel("字号："))
-        row1_main.addWidget(self.main_font_size)
+        h_size_group = QHBoxLayout()
+        h_size_group.addWidget(QLabel("字号："))
+        h_size_group.addWidget(self.main_font_size)
+        row1_main.addLayout(h_size_group)
+        row1_main.addStretch()
         main_layout.addLayout(row1_main)
         row2_main = QHBoxLayout()
-        row2_main.addWidget(self.main_bold)
-        row2_main.addWidget(self.main_underline)
-        row2_main.addWidget(QLabel("字体颜色："))
-        row2_main.addWidget(self.main_color_btn)
+        h_part1 = QHBoxLayout()
+        h_part1.addWidget(self.main_bold)
+        h_part1.addWidget(self.main_underline)
+        h_part1.addWidget(QLabel("字体颜色："))
+        h_part1.addWidget(self.main_color_btn)
+        row2_main.addLayout(h_part1)
         row2_main.addSpacing(20)
-        row2_main.addWidget(QLabel("对齐方式："))
-        row2_main.addWidget(self.main_align)
+        h_align_group = QHBoxLayout()
+        h_align_group.addWidget(QLabel("对齐方式："))
+        h_align_group.addWidget(self.main_align)
+        row2_main.addLayout(h_align_group)
         row2_main.addSpacing(20)
-        row2_main.addWidget(QLabel("行距："))
-        row2_main.addWidget(self.main_line_spacing_type)
-        row2_main.addWidget(self.main_line_spacing_value)
-        row2_main.addWidget(self.main_line_spacing_unit)
+        h_spacing_group = QHBoxLayout()
+        h_spacing_group.addWidget(QLabel("行距："))
+        h_spacing_group.addWidget(self.main_line_spacing_type)
+        h_spacing_group.addWidget(self.main_line_spacing_value)
+        h_spacing_group.addWidget(self.main_line_spacing_unit)
+        row2_main.addLayout(h_spacing_group)
+        row2_main.addStretch()
         main_layout.addLayout(row2_main)
         self.main_warning = QLabel("")
         self.main_warning.setStyleSheet("color: red;")
@@ -925,24 +1054,30 @@ class MainWindow(QMainWindow):
         date_layout.setContentsMargins(20, 0, 0, 0)
 
         h_date = QHBoxLayout()
-        h_date.addWidget(QLabel("开始日期："))
+        h_start_group = QHBoxLayout()
+        h_start_group.addWidget(QLabel("开始日期："))
         self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
         self.start_date.setDate(QDate.currentDate())
         self.start_date.setObjectName("start_date")
-        h_date.addWidget(self.start_date)
+        h_start_group.addWidget(self.start_date)
+        h_date.addLayout(h_start_group)
         h_date.addSpacing(20)
-        h_date.addWidget(QLabel("结束日期："))
+        h_end_group = QHBoxLayout()
+        h_end_group.addWidget(QLabel("结束日期："))
         self.end_date = QDateEdit()
         self.end_date.setCalendarPopup(True)
         self.end_date.setDate(QDate.currentDate().addDays(7))
         self.end_date.setObjectName("end_date")
-        h_date.addWidget(self.end_date)
+        h_end_group.addWidget(self.end_date)
+        h_date.addLayout(h_end_group)
+        h_date.addStretch()
         date_layout.addLayout(h_date)
 
         h_date_check = QHBoxLayout()
         self.date_check_btn = QPushButton("检查日期")
-        self.date_check_btn.setFixedSize(80, 25)
+        self.date_check_btn.setFixedSize(120, 38)
+        self.date_check_btn.setStyleSheet("QPushButton { font-size: 16px; font-weight: bold; background-color: #4CAF50; color: white; border-radius: 6px; } QPushButton:hover { background-color: #2E7D32; }")
         self.date_check_btn.clicked.connect(self.checkDates)
         h_date_check.addWidget(self.date_check_btn)
         self.date_status_icon = QLabel("×")
@@ -965,17 +1100,10 @@ class MainWindow(QMainWindow):
         h_cycle.addWidget(self.cycle_type_combo)
         h_cycle.addStretch()
         sub_layout.addLayout(h_cycle)
-
         # ---- 4. 休息设置 ----
-        self.enable_rest_cb = QCheckBox("启用休息设置")
-        self.enable_rest_cb.setChecked(True)
-        self.enable_rest_cb.toggled.connect(lambda checked: self.rest_container.setVisible(checked))
-        sub_layout.addWidget(self.enable_rest_cb)
-
         self.rest_container = QWidget()
         rest_layout = QVBoxLayout(self.rest_container)
         rest_layout.setContentsMargins(20, 0, 0, 0)
-
         h_rest = QHBoxLayout()
         h_rest.setSpacing(0)
         h_rest.addWidget(QLabel("休息设置：做"))
@@ -999,18 +1127,13 @@ class MainWindow(QMainWindow):
         self.rest_warning.setStyleSheet("color: red;")
         self.rest_warning.setVisible(False)
         rest_layout.addWidget(self.rest_warning)
-
         sub_layout.addWidget(self.rest_container)
-
         # 根据日期计算方式显示/隐藏休息设置
         def on_cycle_changed(mode):
             show = (mode == "自定义")
             self.rest_container.setVisible(show)
-            self.enable_rest_cb.setVisible(show)
-
-        self.cycle_type_combo.currentTextChanged.connect(on_cycle_changed)
+            self.cycle_type_combo.currentTextChanged.connect(on_cycle_changed)
         on_cycle_changed(self.cycle_type_combo.currentText())
-
         # 对齐方式
         hbox_sub_align = QHBoxLayout()
         hbox_sub_align.setSpacing(0)
@@ -1025,14 +1148,17 @@ class MainWindow(QMainWindow):
 
         # 字体设置
         hbox_sub_font = QHBoxLayout()
-        hbox_sub_font.addWidget(QLabel("字体："))
+        h_sub_font_group = QHBoxLayout()
+        h_sub_font_group.addWidget(QLabel("字体："))
         self.sub_font = QComboBox()
         self.sub_font.addItems(QFontDatabase().families())
         self.sub_font.setCurrentText("\u5b8b\u4f53")
         self.sub_font.setObjectName("sub_font")
-        hbox_sub_font.addWidget(self.sub_font)
+        h_sub_font_group.addWidget(self.sub_font)
+        hbox_sub_font.addLayout(h_sub_font_group)
         hbox_sub_font.addSpacing(20)
-        hbox_sub_font.addWidget(QLabel("字号："))
+        h_sub_size_group = QHBoxLayout()
+        h_sub_size_group.addWidget(QLabel("字号："))
         self.sub_font_size = QComboBox()
         self.sub_font_size.addItems([
             "\u521d\u53f7", "\u5c0f\u521d", "\u4e00\u53f7", "\u5c0f\u4e00", "\u4e8c\u53f7", "\u5c0f\u4e8c",
@@ -1043,21 +1169,25 @@ class MainWindow(QMainWindow):
         ])
         self.sub_font_size.setCurrentText("\u56db\u53f7")
         self.sub_font_size.setObjectName("sub_font_size")
-        hbox_sub_font.addWidget(self.sub_font_size)
+        h_sub_size_group.addWidget(self.sub_font_size)
+        hbox_sub_font.addLayout(h_sub_size_group)
         hbox_sub_font.addSpacing(20)
         self.sub_bold = QCheckBox("\u52a0\u7c97")
         self.sub_bold.setObjectName("sub_bold")
-        hbox_sub_font.addWidget(self.sub_bold)
         self.sub_underline = QCheckBox("\u4e0b\u5212\u7ebf")
         self.sub_underline.setObjectName("sub_underline")
-        hbox_sub_font.addWidget(self.sub_underline)
-        hbox_sub_font.addWidget(QLabel("\u5b57\u4f53\u989c\u8272\uff1a"))
         self.sub_color_btn = QPushButton()
         self.sub_color_btn.setFixedSize(30, 20)
-        self.sub_color_btn.setStyleSheet("background-color: black;")
+        self.sub_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
         self.sub_color_btn.clicked.connect(lambda: self.pickColor(self.sub_color_btn))
         self.sub_color_btn.setObjectName("sub_color_btn")
-        hbox_sub_font.addWidget(self.sub_color_btn)
+        h_sub_extra_group = QHBoxLayout()
+        h_sub_extra_group.addWidget(self.sub_bold)
+        h_sub_extra_group.addWidget(self.sub_underline)
+        h_sub_extra_group.addWidget(QLabel("\u5b57\u4f53\u989c\u8272\uff1a"))
+        h_sub_extra_group.addWidget(self.sub_color_btn)
+        hbox_sub_font.addLayout(h_sub_extra_group)
+        hbox_sub_font.addStretch()
         sub_layout.addLayout(hbox_sub_font)
 
         self.sub_line_spacing_container = QWidget()
@@ -1144,26 +1274,25 @@ class MainWindow(QMainWindow):
         margin_layout.addStretch()
         layout.addWidget(group_margin)
         # 页眉页脚
-        group_header_footer = QGroupBox("页眉页脚设置")
+        group_header_footer = QGroupBox("页眉设置")
         group_header_footer.setStyleSheet("QGroupBox { border: 1px solid gray; margin-top: 10px; }")
         hf_layout = QVBoxLayout(group_header_footer)
         h_header = QHBoxLayout()
-        h_header.addWidget(QLabel("左页眉："))
-        self.header_left_edit = QLineEdit()
-        self.header_left_edit.setToolTip("输入左侧页眉内容（可选）")
-        self.header_left_edit.setObjectName("header_left_edit")
-        h_header.addWidget(self.header_left_edit)
-        h_header.addSpacing(30)
-        h_header.addWidget(QLabel("右页眉："))
-        self.header_right_edit = QLineEdit()
-        self.header_right_edit.setToolTip("输入右侧页眉内容（可选）")
-        self.header_right_edit.setObjectName("header_right_edit")
-        h_header.addWidget(self.header_right_edit)
+        h_header.addWidget(QLabel("页眉位置："))
+        self.header_mode = QComboBox()
+        self.header_mode.addItems(["无页眉", "左页眉", "右页眉"])
+        self.header_mode.setObjectName("header_mode")
+        h_header.addWidget(self.header_mode)
+        h_header.addSpacing(15)
+        self.header_text_label = QLabel("页眉文字：")
+        h_header.addWidget(self.header_text_label)
+        self.header_text_edit = QLineEdit()
+        self.header_text_edit.setObjectName("header_text_edit")
+        h_header.addWidget(self.header_text_edit)
         h_header.addStretch()
         hf_layout.addLayout(h_header)
-
-
-        # 页码
+        self.header_mode.currentTextChanged.connect(self._on_header_mode_changed)
+        self._on_header_mode_changed(self.header_mode.currentText())
         h_page = QHBoxLayout()
         self.insert_page_check = QCheckBox("插入页码")
         self.insert_page_check.setChecked(True)
@@ -1223,13 +1352,39 @@ class MainWindow(QMainWindow):
         h_page_format.addWidget(QLabel("字体颜色："))
         self.page_color_btn = QPushButton()
         self.page_color_btn.setFixedSize(30, 20)
-        self.page_color_btn.setStyleSheet("background-color: black;")
+        self.page_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
         self.page_color_btn.clicked.connect(lambda: self.pickColor(self.page_color_btn))
         self.page_color_btn.setObjectName("page_color_btn")
         h_page_format.addWidget(self.page_color_btn)
         h_page_format.addStretch()
         page_set_layout.addLayout(h_page_format)
         hf_layout.addWidget(self.page_settings_group)
+        # 页眉页脚字体设置
+        hf_font_layout = QHBoxLayout()
+        hf_font_layout.addWidget(QLabel("页眉字体："))
+        self.header_footer_font = QComboBox()
+        self.header_footer_font.addItems(QFontDatabase().families())
+        self.header_footer_font.setCurrentText("宋体")
+        self.header_footer_font.setObjectName("header_footer_font")
+        hf_font_layout.addWidget(self.header_footer_font)
+        hf_font_layout.addSpacing(15)
+        hf_font_layout.addWidget(QLabel("字号："))
+        self.header_footer_font_size = QComboBox()
+        self.header_footer_font_size.addItems([
+            "初号", "小初", "一号", "小一", "二号", "小二", "三号", "小三",
+            "四号", "小四", "五号", "小五", "六号", "小六", "七号", "八号",
+            "8", "9", "10", "11", "12", "14", "16", "18", "20", "22", "24",
+            "26", "28", "30", "36", "48", "72"
+        ])
+        self.header_footer_font_size.setCurrentText("五号")
+        self.header_footer_font_size.setObjectName("header_footer_font_size")
+        hf_font_layout.addWidget(self.header_footer_font_size)
+        hf_font_layout.addSpacing(15)
+        self.header_footer_bold = QCheckBox("加粗")
+        self.header_footer_bold.setObjectName("header_footer_bold")
+        hf_font_layout.addWidget(self.header_footer_bold)
+        hf_font_layout.addStretch()
+        hf_layout.addLayout(hf_font_layout)
         self.insert_page_check.toggled.connect(self.on_insert_page_toggled)
         self.page_position.currentTextChanged.connect(self.on_page_position_changed)
         self.on_insert_page_toggled(self.insert_page_check.isChecked())
@@ -1301,11 +1456,15 @@ class MainWindow(QMainWindow):
         if not checked:
             self.page_position.setCurrentText("居中")
 
-
-
-
     def on_page_position_changed(self, position):
         pass
+
+    def _on_header_mode_changed(self, mode):
+        has_header = mode != '无页眉'
+        self.header_text_label.setVisible(has_header)
+        self.header_text_edit.setVisible(has_header)
+        if mode == '无页眉':
+            self.header_text_edit.clear()
 
     # ==================== 处理标签页 ====================
 
@@ -1411,6 +1570,7 @@ class MainWindow(QMainWindow):
         # 保存预设按钮
         hbox_preset = QHBoxLayout()
         save_preset_btn = QPushButton("保存当前预设")
+        save_preset_btn.setStyleSheet("QPushButton { font-size: 14px; font-weight: bold; background-color: #FF9800; color: white; border-radius: 6px; padding: 8px 16px; } QPushButton:hover { background-color: #E65100; }")
         save_preset_btn.clicked.connect(self.savePreset)
         save_preset_btn.setObjectName("save_preset_btn")
         hbox_preset.addStretch()
@@ -1420,6 +1580,7 @@ class MainWindow(QMainWindow):
         # 一键排版按钮
         self.process_btn = QPushButton("一键排版")
         self.process_btn.setFixedSize(200, 40)
+        self.process_btn.setStyleSheet("QPushButton { font-size: 18px; font-weight: bold; background-color: #4CAF50; color: white; border-radius: 8px; } QPushButton:hover { background-color: #2E7D32; }")
         self.process_btn.clicked.connect(self.start_process)
         hbox_process = QHBoxLayout()
         hbox_process.addStretch()
@@ -1815,7 +1976,7 @@ class MainWindow(QMainWindow):
         for idx, (fullpath, pages, seq_str) in enumerate(checked_files):
             # 将源文件序号转换为输出格式
             src_type = self.orig_seq_type_combo.currentText() if hasattr(self,
-                                                                         'orig_seq_type_combo') else self.seq_type_combo.currentText()
+                                                                          'orig_seq_type_combo') else self.seq_type_combo.currentText()
             try:
                 seq_num = int(seq_str)
             except ValueError:
@@ -1832,6 +1993,7 @@ class MainWindow(QMainWindow):
             hbox = QHBoxLayout()
             label = QLabel(f"{idx + 1:02d}  {name}")
             label.setToolTip(name)
+            label.setObjectName(f"gen_file_label_{idx}")
             hbox.addWidget(label)
             if show_pages:
                 spin = QSpinBox()
@@ -1842,6 +2004,30 @@ class MainWindow(QMainWindow):
                 hbox.addWidget(QLabel("页"))
             hbox.addStretch()
             self.gen_file_layout.addLayout(hbox)
+        # ===== 从加载的预设中恢复期望页数 =====
+        if hasattr(self, '_preset_gen_file_pages') and self._preset_gen_file_pages:
+            values = list(self._preset_gen_file_pages.values())
+            all_same = len(set(values)) == 1
+            for i in range(self.gen_file_layout.count()):
+                item = self.gen_file_layout.itemAt(i)
+                if item and item.layout():
+                    lay = item.layout()
+                    for j in range(lay.count()):
+                        child = lay.itemAt(j)
+                        if child and child.widget():
+                            cw = child.widget()
+                            if isinstance(cw, QSpinBox):
+                                if all_same:
+                                    cw.setValue(values[0])
+                                else:
+                                    for k in range(lay.count()):
+                                        lbl_item = lay.itemAt(k)
+                                        if lbl_item and lbl_item.widget() and isinstance(lbl_item.widget(), QLabel):
+                                            lbl_text = lbl_item.widget().toolTip().strip()
+                                            if lbl_text in self._preset_gen_file_pages:
+                                                cw.setValue(self._preset_gen_file_pages[lbl_text])
+                                            break
+                                break
 
     def format_date_for_output(self, date, fmt):
         year = date.year()
@@ -1960,7 +2146,7 @@ class MainWindow(QMainWindow):
         if has_checked:
             self.gen_pages_check.setChecked(False)
         else:
-            self.gen_pages_check.setChecked(True)
+            self.gen_pages_check.setEnabled(True)
 
     def move_down(self):
         selected_rows = self.process_table.selectedItems()
@@ -2000,7 +2186,7 @@ class MainWindow(QMainWindow):
         if not rows:
             return
         reply = QMessageBox.question(self, "确认删除", f"确定要删除选中的{len(rows)} 个文件吗？",
-                                     QMessageBox.Yes | QMessageBox.No)
+                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             # 从后往前删除，避免索引变化
             for row in rows:
@@ -2010,14 +2196,14 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "process_file_info") and row < len(self.process_file_info):
                     del self.process_file_info[row]
             self.reorder_table()
-            # 检查是否还有错误文件，若无则重新启用页数设置。
+            # 检查是否还有错误文件，若无则重新启用页数设置
             self._update_error_state()
             self.update_gen_file_list()
 
     def clear_list(self):
         reply = QMessageBox.question(self, "确认清空",
-                                     "清空后无法处理文件。是不是你的文件夹选错了？请回到“文件名”标签重新选择文件夹。\n是否要继续清空列表？",
-                                     QMessageBox.Yes | QMessageBox.No)
+                                      "清空后无法处理文件。是不是你的文件夹选错了？请回到“文件名”标签重新选择文件夹。\n是否要继续清空列表？",
+                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.process_table.setRowCount(0)
             self.process_file_list.clear()
@@ -2039,7 +2225,7 @@ class MainWindow(QMainWindow):
         self.update_gen_file_list()
         self.update_button_state()
 
-    
+
     def start_process(self):
         self.log_text.clear()
         self.log_message("开始排版...")
@@ -2151,9 +2337,10 @@ class MainWindow(QMainWindow):
                 pythoncom.CoUninitialize()
 
         # PDF 导出
-        output_format_index = self.output_format.currentIndex()  # 0=docx, 1=pdf, 2=两者
-        if output_format_index >= 1:
-            self.log_message("正在导出PDF...")
+        output_format = self.output_format.currentText()
+        if ".pdf" in output_format or "两者" in output_format:
+            pdf_files_exist = sum(1 for o in output_paths if o is not None)
+            self.log_message('正在导出PDF...')
             QApplication.processEvents()
             import pythoncom
             import win32com.client
@@ -2191,9 +2378,9 @@ class MainWindow(QMainWindow):
                 if pdf_word:
                     pdf_word.Quit()
                 pythoncom.CoUninitialize()
-
+            self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
             # 当只选PDF时删除中间.docx
-            if output_format_index == 1:
+            if output_format == "Portable Document Format（.pdf）":
                 deleted = 0
                 for out in output_paths:
                     if out and os.path.exists(out):
@@ -2205,7 +2392,6 @@ class MainWindow(QMainWindow):
                 if deleted > 0:
                     self.log_message(f"已删除 {deleted} 个临时.docx文件")
 
-            self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
 
         # 结果汇总
         result_lines = [f"排版完成：成功 {success} 个，失败 {fail} 个。"]
@@ -2265,8 +2451,86 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "日期错误", "结束日期必须大于开始日期")
             self.setDateStatusIcon(False)
             return
+
+        # 统计已加载文件数量
+        file_count = len(self.process_file_list)
+
+        if file_count == 0:
+            QMessageBox.warning(self, "日期检查", "没有加载文件，无法计算日期\n请先在\"文件名\"标签页中加载文件")
+            self.setDateStatusIcon(False)
+            return
+
+        mode = self.cycle_type_combo.currentText()
+        dates = []
+
+        if mode == "按正常工作日安排":
+            # 周一至周五工作，周六周日休息
+            current = QDate(start)
+            i = 0
+            while i < file_count:
+                day_of_week = current.dayOfWeek()  # 1=周一, 7=周日
+                if day_of_week <= 5:  # 周一到周五
+                    dates.append(current)
+                    i += 1
+                current = current.addDays(1)
+        else:  # 自定义 - 做N天休M天
+            work_days = self.rest_do.value()
+            rest_days = self.rest_rest.value()
+            if work_days <= 0:
+                QMessageBox.warning(self, "日期错误", "休息设置中\"做\"的天数必须大于0")
+                self.setDateStatusIcon(False)
+                return
+            if rest_days == 0:
+                current = QDate(start)
+                # 不休：每天连续安排
+                for _ in range(file_count):
+                    dates.append(current)
+                    current = current.addDays(1)
+            else:
+                current = QDate(start)
+                i = 0
+                cycle_pos = 0
+                total_cycle = work_days + rest_days
+                if total_cycle == 0:
+                    total_cycle = 1
+                while i < file_count:
+                    if cycle_pos < work_days:
+                        dates.append(current)
+                        i += 1
+                        cycle_pos += 1
+                    else:
+                        cycle_pos += 1
+                        if cycle_pos >= total_cycle:
+                            cycle_pos = 0
+                    current = current.addDays(1)
+
+        last_date = dates[-1]
+        if end < last_date:
+            QMessageBox.warning(self, "日期错误",
+                f"结束日期太早！\n"
+                f"根据当前设置，{file_count}份文件需要安排到 {last_date.toString('yyyy-MM-dd')}。\n"
+                f"请将结束日期设置为 {last_date.toString('yyyy-MM-dd')} 或之后。")
+            self.setDateStatusIcon(False)
+            return
+
+        # 生成日期预览
+        date_preview = []
+        weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+        for idx, d in enumerate(dates):
+            seq = self.process_file_list[idx][1] if idx < len(self.process_file_list) else '?'
+            wd = weekday_names[d.dayOfWeek() - 1]
+            date_preview.append(f"  第{idx+1}份 ({seq}): {d.toString('yyyy-MM-dd')} ({wd})")
+        preview_str = "\n".join(date_preview)
+
         self.setDateStatusIcon(True)
-        QMessageBox.information(self, "日期检查", "日期设置有效")
+        QMessageBox.information(self, "日期检查",
+            f"日期设置有效\n\n"
+            f"开始日期：{start.toString('yyyy-MM-dd')}\n"
+            f"结束日期：{end.toString('yyyy-MM-dd')}\n"
+            f"文件数量：{file_count}\n"
+            f"最后文件日期：{last_date.toString('yyyy-MM-dd')}\n"
+            f"日期计算方式：{mode}\n\n"
+            f"日期安排预览：\n{preview_str}")
 
     def setDateStatusIcon(self, success):
         if success:
@@ -2357,10 +2621,9 @@ class MainWindow(QMainWindow):
     def _set_color_btn(self, btn, color_name):
         """设置颜色按钮的背景色"""
         from PyQt5.QtGui import QColor
-        btn.setStyleSheet(f"background-color: {color_name};")
+        btn.setStyleSheet(f'QPushButton {{ background-color: {color_name}; border: 1px solid #666; border-radius: 3px; }} QPushButton:hover {{ border: 2px solid white; }}')
         color = QColor(color_name)
         btn.setProperty("color", color)
-
     def _get_widget_value(self, widget):
         """获取控件当前值，返回适合JSON序列化的类型"""
         cls_name = widget.__class__.__name__
@@ -2417,12 +2680,11 @@ class MainWindow(QMainWindow):
         """保存当前所有设置到JSON文件"""
         import json
         from PyQt5.QtWidgets import QFileDialog, QMessageBox
-        from PyQt5.QtCore import QDate
+        from PyQt5.QtCore import QDate, QDateTime
         from PyQt5.QtWidgets import QLabel, QSpinBox
 
-        default_name = "排版预设.json"
-        if self.preset_config_path:
-            default_name = self.preset_config_path
+        now_str = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
+        default_name = "试卷排版工具V2.5_排版预设配置_" + now_str + ".json"
 
         filepath, _ = QFileDialog.getSaveFileName(
             self, "保存预设配置", default_name, "JSON文件 (*.json)"
@@ -2508,10 +2770,9 @@ class MainWindow(QMainWindow):
             ('end_date', self.end_date),
             ('enable_examiner_cb', self.enable_examiner_cb),
             ('enable_date_cb', self.enable_date_cb),
-            ('enable_rest_cb', self.enable_rest_cb),
             ('rest_do', self.rest_do),
             ('rest_rest', self.rest_rest),
-            ('date_status_icon', self.date_status_icon),
+
         ]
         for name, w in tab_widgets_sub_features:
             data[name] = self._get_widget_value(w)
@@ -2526,8 +2787,8 @@ class MainWindow(QMainWindow):
             ('margin_bottom', self.margin_bottom),
             ('margin_left', self.margin_left),
             ('margin_right', self.margin_right),
-            ('header_left_edit', self.header_left_edit),
-            ('header_right_edit', self.header_right_edit),
+            ('header_mode', self.header_mode),
+            ('header_text_edit', self.header_text_edit),
             ('insert_page_check', self.insert_page_check),
             ('page_position', self.page_position),
             ('page_style', self.page_style),
@@ -2568,7 +2829,7 @@ class MainWindow(QMainWindow):
                             elif isinstance(cw, QSpinBox):
                                 pages_spin = cw
                     if filename_label and pages_spin is not None:
-                        fname = filename_label.text().strip()
+                        fname = filename_label.toolTip().strip()
                         file_pages[fname] = pages_spin.value()
         data['gen_file_pages'] = file_pages
 
@@ -2604,7 +2865,7 @@ class MainWindow(QMainWindow):
 
         # 执行加载
         for name, value in data.items():
-            if name in ('examiners', 'reviewers', 'gen_file_pages'):
+            if name in ('examiners', 'reviewers', 'date_status_icon', 'footer_left_edit', 'footer_right_edit', 'gen_file_pages', 'preset_source_files', 'header_left_edit', 'header_right_edit', 'gen_pages_check', 'enable_rest_cb'):
                 continue
             widget = getattr(self, name, None)
             if widget is None:
@@ -2620,6 +2881,15 @@ class MainWindow(QMainWindow):
             self.examiners = list(data['examiners'])
         if 'reviewers' in data:
             self.reviewers = list(data['reviewers'])
+
+        # 存储期望页数，等生成文件列表后恢复
+        if 'gen_file_pages' in data and data['gen_file_pages']:
+            self._preset_gen_file_pages = data['gen_file_pages']
+        # 确保gen_pages_check按文件加载（显式处理）
+        if 'gen_pages_check' in data:
+            self.gen_pages_check.blockSignals(True)
+            self.gen_pages_check.setChecked(bool(data['gen_pages_check']))
+            self.gen_pages_check.blockSignals(False)
 
         # 更新config label
         self.preset_config_path = filepath

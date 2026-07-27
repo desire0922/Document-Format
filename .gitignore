@@ -1,8 +1,12 @@
-﻿# IDE
-.idea/
-
-# Python cache
 __pycache__/
-
-# Generated output
+.idea/
 暑假作业/
+build/
+dist/
+试卷排版工具/
+*.spec
+f.txt
+fix*.py
+test*
+check.py
+7月27日优化.txt

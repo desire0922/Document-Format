@@ -3,15 +3,15 @@
 假期作业排版模块 - DocumentFormatter
 
 读取同学GUI的配置变量，对组卷网原始DOCX进行：
-  - 文件名解析（提取序号、日期）
-  - 文件名生成（按规则组装输出文件名）
-  - 日期分配（按做/休周期计算每套卷子的日期）
-  - 文档结构分析（定位各大题、参考答案）
-  - 输出文档构建（标题区 + 正文内容 + 页面格式）
+   - 文件名解析（提取序号、日期）
+   - 文件名生成（按规则组装输出文件名）
+   - 日期分配（按做/休周期计算每套卷子的日期）
+   - 文档结构分析（定位各大题、参考答案）
+   - 输出文档构建（标题区 + 正文内容 + 页面格式）
 
 用法：
-  formatter = DocumentFormatter(gui_instance)
-  output_path = formatter.process_file('源文件.docx', '输出目录')
+   formatter = DocumentFormatter(gui_instance)
+   output_path = formatter.process_file('源文件.docx', '输出目录')
 """
 
 import re
@@ -293,6 +293,20 @@ class DocumentFormatter:
             output_doc.add_paragraph('')
             return
         p = output_doc.add_paragraph()
+        # 应用题目行距设置
+        ls_type = self._get_attr_text(getattr(self.g, 'question_line_spacing_type', ''))
+        ls_value = self._get_attr_text(getattr(self.g, 'question_line_spacing_value', ''))
+        if ls_type and ls_value:
+            try:
+                val = float(ls_value)
+                if '倍' in ls_type:
+                    p.paragraph_format.line_spacing = val
+                elif '固定' in ls_type:
+                    p.paragraph_format.line_spacing = Pt(val)
+                else:
+                    p.paragraph_format.line_spacing = val
+            except Exception:
+                pass
         if src_para.alignment is not None:
             p.alignment = src_para.alignment
         for run in src_para.runs:
@@ -410,11 +424,15 @@ class DocumentFormatter:
         # 页边距
         # 页边距 (GUI名 -> python-docx节属性名)
         margin_map = {'margin_top': 'top_margin', 'margin_bottom': 'bottom_margin',
-                      'margin_left': 'left_margin', 'margin_right': 'right_margin'}
+                       'margin_left': 'left_margin', 'margin_right': 'right_margin'}
         for gui_name, default in [('margin_top', 2.54), ('margin_bottom', 2.54),
-                                   ('margin_left', 3.18), ('margin_right', 3.18)]:
+                                    ('margin_left', 3.18), ('margin_right', 3.18)]:
             try:
-                val = float(getattr(g, gui_name, default) or default)
+                widget = getattr(g, gui_name, None)
+                if widget is None:
+                    val = default
+                else:
+                    val = float(widget.value() or default)
                 section_attr = margin_map[gui_name]
                 setattr(section, section_attr, Cm(val))
             except Exception:
@@ -423,34 +441,25 @@ class DocumentFormatter:
         # 计算右对齐制表位(相对页边缘)
         _pw = section.page_width
         _mr = section.right_margin
+        _ml = section.left_margin
         _emu_per_twip = 914400 / 1440
-        _right_tab = int((_pw - _mr) / _emu_per_twip)
+        _right_tab = int((_pw - _ml - _mr) / _emu_per_twip)
 
         # 页眉(左+右同行，右对齐制表位)
         header = section.header
         header.is_linked_to_previous = False
-        left_text = self._get_text(g.header_left_edit)
-        right_text = self._get_text(g.header_right_edit)
+        header_mode = self._get_attr_text(g.header_mode)
+        header_text = self._get_text(g.header_text_edit)
         hp = header.paragraphs[0]
         hp.clear()
-        if left_text or right_text:
-            from docx.oxml import OxmlElement
-            pPr = hp._element.get_or_add_pPr()
-            tabs_el = OxmlElement('w:tabs')
-            tab_r = OxmlElement('w:tab')
-            tab_r.set(qn('w:val'), 'right')
-            tab_r.set(qn('w:pos'), str(_right_tab))
-            tabs_el.append(tab_r)
-            pPr.append(tabs_el)
-            if left_text:
-                r1 = hp.add_run(left_text)
-                self._apply_run_format(r1, g, 'header_footer')
-            if left_text and right_text:
-                hp.add_run(chr(9))
-            if right_text:
-                r2 = hp.add_run(right_text)
-                self._apply_run_format(r2, g, 'header_footer')
+        if header_text and header_mode == "左页眉":
+            r = hp.add_run(header_text)
+            self._apply_run_format(r, g, 'header_footer')
             hp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        elif header_text and header_mode == "右页眉":
+            r = hp.add_run(header_text)
+            self._apply_run_format(r, g, 'header_footer')
+            hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
         # 页脚(左+右+页码共存)
         footer = section.footer
@@ -499,29 +508,43 @@ class DocumentFormatter:
 
         def add_page_number():
             if style == "科目  第x页  共y页":
-                if subject:  fp.add_run(subject + "  ")
-                fp.add_run("第")
+                if subject:
+                    r = fp.add_run(subject + "  ")
+                    self._apply_run_format(r, g, 'page')
+                r = fp.add_run("第")
+                self._apply_run_format(r, g, 'page')
                 self._add_page_field_run(fp, g)
-                fp.add_run("页  共")
+                r = fp.add_run("页  共")
+                self._apply_run_format(r, g, 'page')
                 self._add_numpages_field_run(fp, g)
-                fp.add_run("页")
+                r = fp.add_run("页")
+                self._apply_run_format(r, g, 'page')
             elif style == "科目  x/y":
-                if subject:  fp.add_run(subject + "  ")
+                if subject:
+                    r = fp.add_run(subject + "  ")
+                    self._apply_run_format(r, g, 'page')
                 self._add_page_field_run(fp, g)
-                fp.add_run("/")
+                r = fp.add_run("/")
+                self._apply_run_format(r, g, 'page')
                 self._add_numpages_field_run(fp, g)
             elif style == "科目  x":
-                if subject:  fp.add_run(subject + "  ")
+                if subject:
+                    r = fp.add_run(subject + "  ")
+                    self._apply_run_format(r, g, 'page')
                 self._add_page_field_run(fp, g)
             elif style == "第x页  共y页":
-                fp.add_run("第")
+                r = fp.add_run("第")
+                self._apply_run_format(r, g, 'page')
                 self._add_page_field_run(fp, g)
-                fp.add_run("页  共")
+                r = fp.add_run("页  共")
+                self._apply_run_format(r, g, 'page')
                 self._add_numpages_field_run(fp, g)
-                fp.add_run("页")
+                r = fp.add_run("页")
+                self._apply_run_format(r, g, 'page')
             elif style == "x/y":
                 self._add_page_field_run(fp, g)
-                fp.add_run("/")
+                r = fp.add_run("/")
+                self._apply_run_format(r, g, 'page')
                 self._add_numpages_field_run(fp, g)
             elif style == "x":
                 self._add_page_field_run(fp, g)
@@ -667,6 +690,7 @@ class DocumentFormatter:
         fld1 = OxmlElement('w:fldChar')
         fld1.set(qn('w:fldCharType'), 'begin')
         run1._element.append(fld1)
+        self._apply_run_format(run1, g, 'page')
         run2 = fp.add_run()
         instr = OxmlElement('w:instrText')
         instr.set(qn('xml:space'), 'preserve')
@@ -677,6 +701,7 @@ class DocumentFormatter:
         fld2 = OxmlElement('w:fldChar')
         fld2.set(qn('w:fldCharType'), 'end')
         run3._element.append(fld2)
+        self._apply_run_format(run3, g, 'page')
 
     def _add_numpages_field_run(self, fp, g):
         from docx.oxml import OxmlElement
@@ -684,6 +709,7 @@ class DocumentFormatter:
         fld1 = OxmlElement('w:fldChar')
         fld1.set(qn('w:fldCharType'), 'begin')
         run1._element.append(fld1)
+        self._apply_run_format(run1, g, 'page')
         run2 = fp.add_run()
         instr = OxmlElement('w:instrText')
         instr.set(qn('xml:space'), 'preserve')
@@ -694,6 +720,7 @@ class DocumentFormatter:
         fld2 = OxmlElement('w:fldChar')
         fld2.set(qn('w:fldCharType'), 'end')
         run3._element.append(fld2)
+        self._apply_run_format(run3, g, 'page')
 
     def _calc_space_padding(self, left_text, right_text, section):
         """计算左右文本之间的空格填充数量"""
@@ -738,7 +765,7 @@ class DocumentFormatter:
 
         run.bold = self._get_bool(getattr(g, f'{prefix}_bold', False))
         run.underline = self._get_bool(getattr(g, f'{prefix}_underline', False))
-
+        run.italic = self._get_bool(getattr(g, f'{prefix}_italic', False))
         color = self._get_qcolor(getattr(g, f'{prefix}_color_btn', None))
         if color is not None:
             rgb = self._qcolor_to_rgb(color)
@@ -751,6 +778,10 @@ class DocumentFormatter:
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         elif '右' in align_text:
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        elif '两端对齐' in align_text:
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        elif '分散对齐' in align_text:
+            p.alignment = WD_ALIGN_PARAGRAPH.DISTRIBUTE
         elif '左' in align_text:
             p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         else:
