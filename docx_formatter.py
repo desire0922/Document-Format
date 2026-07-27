@@ -423,34 +423,25 @@ class DocumentFormatter:
         # 计算右对齐制表位(相对页边缘)
         _pw = section.page_width
         _mr = section.right_margin
+        _ml = section.left_margin
         _emu_per_twip = 914400 / 1440
-        _right_tab = int((_pw - _mr) / _emu_per_twip)
+        _right_tab = int((_pw - _ml - _mr) / _emu_per_twip)
 
         # 页眉(左+右同行，右对齐制表位)
         header = section.header
         header.is_linked_to_previous = False
-        left_text = self._get_text(g.header_left_edit)
-        right_text = self._get_text(g.header_right_edit)
+        header_mode = self._get_attr_text(g.header_mode)
+        header_text = self._get_text(g.header_text_edit)
         hp = header.paragraphs[0]
         hp.clear()
-        if left_text or right_text:
-            from docx.oxml import OxmlElement
-            pPr = hp._element.get_or_add_pPr()
-            tabs_el = OxmlElement('w:tabs')
-            tab_r = OxmlElement('w:tab')
-            tab_r.set(qn('w:val'), 'right')
-            tab_r.set(qn('w:pos'), str(_right_tab))
-            tabs_el.append(tab_r)
-            pPr.append(tabs_el)
-            if left_text:
-                r1 = hp.add_run(left_text)
-                self._apply_run_format(r1, g, 'header_footer')
-            if left_text and right_text:
-                hp.add_run(chr(9))
-            if right_text:
-                r2 = hp.add_run(right_text)
-                self._apply_run_format(r2, g, 'header_footer')
+        if header_text and header_mode == "左页眉":
+            r = hp.add_run(header_text)
+            self._apply_run_format(r, g, 'header_footer')
             hp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        elif header_text and header_mode == "右页眉":
+            r = hp.add_run(header_text)
+            self._apply_run_format(r, g, 'header_footer')
+            hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
         # 页脚(左+右+页码共存)
         footer = section.footer

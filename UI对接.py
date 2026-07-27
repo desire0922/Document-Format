@@ -1288,20 +1288,21 @@ class MainWindow(QMainWindow):
         group_header_footer.setStyleSheet("QGroupBox { border: 1px solid gray; margin-top: 10px; }")
         hf_layout = QVBoxLayout(group_header_footer)
         h_header = QHBoxLayout()
-        h_header.addWidget(QLabel("左页眉："))
-        self.header_left_edit = QLineEdit()
-        self.header_left_edit.setToolTip("输入左侧页眉内容（可选）")
-        self.header_left_edit.setObjectName("header_left_edit")
-        h_header.addWidget(self.header_left_edit)
-        h_header.addSpacing(30)
-        h_header.addWidget(QLabel("右页眉："))
-        self.header_right_edit = QLineEdit()
-        self.header_right_edit.setToolTip("输入右侧页眉内容（可选）")
-        self.header_right_edit.setObjectName("header_right_edit")
-        h_header.addWidget(self.header_right_edit)
+        h_header.addWidget(QLabel("页眉位置："))
+        self.header_mode = QComboBox()
+        self.header_mode.addItems(["无页眉", "左页眉", "右页眉"])
+        self.header_mode.setObjectName("header_mode")
+        h_header.addWidget(self.header_mode)
+        h_header.addSpacing(15)
+        self.header_text_label = QLabel("页眉文字：")
+        h_header.addWidget(self.header_text_label)
+        self.header_text_edit = QLineEdit()
+        self.header_text_edit.setObjectName("header_text_edit")
+        h_header.addWidget(self.header_text_edit)
         h_header.addStretch()
         hf_layout.addLayout(h_header)
-        # 页码
+        self.header_mode.currentTextChanged.connect(self._on_header_mode_changed)
+        self._on_header_mode_changed(self.header_mode.currentText())
         h_page = QHBoxLayout()
         self.insert_page_check = QCheckBox("插入页码")
         self.insert_page_check.setChecked(True)
@@ -1467,6 +1468,13 @@ class MainWindow(QMainWindow):
 
     def on_page_position_changed(self, position):
         pass
+
+    def _on_header_mode_changed(self, mode):
+        has_header = mode != '无页眉'
+        self.header_text_label.setVisible(has_header)
+        self.header_text_edit.setVisible(has_header)
+        if mode == '无页眉':
+            self.header_text_edit.clear()
 
     # ==================== 处理标签页 ====================
 
@@ -2028,7 +2036,6 @@ class MainWindow(QMainWindow):
                                                 cw.setValue(self._preset_gen_file_pages[lbl_text])
                                             break
                                 break
-            self._preset_gen_file_pages = None
 
     def format_date_for_output(self, date, fmt):
         year = date.year()
@@ -2147,7 +2154,7 @@ class MainWindow(QMainWindow):
         if has_checked:
             self.gen_pages_check.setChecked(False)
         else:
-            self.gen_pages_check.setChecked(True)
+            self.gen_pages_check.setEnabled(True)
 
     def move_down(self):
         selected_rows = self.process_table.selectedItems()
@@ -2783,8 +2790,8 @@ class MainWindow(QMainWindow):
             ('margin_bottom', self.margin_bottom),
             ('margin_left', self.margin_left),
             ('margin_right', self.margin_right),
-            ('header_left_edit', self.header_left_edit),
-            ('header_right_edit', self.header_right_edit),
+            ('header_mode', self.header_mode),
+            ('header_text_edit', self.header_text_edit),
             ('insert_page_check', self.insert_page_check),
             ('page_position', self.page_position),
             ('page_style', self.page_style),
@@ -2861,7 +2868,7 @@ class MainWindow(QMainWindow):
 
         # 执行加载
         for name, value in data.items():
-            if name in ('examiners', 'reviewers', 'date_status_icon'):
+            if name in ('examiners', 'reviewers', 'date_status_icon', 'footer_left_edit', 'footer_right_edit', 'gen_file_pages', 'preset_source_files', 'header_left_edit', 'header_right_edit', 'gen_pages_check'):
                 continue
             widget = getattr(self, name, None)
             if widget is None:
@@ -2881,6 +2888,11 @@ class MainWindow(QMainWindow):
         # 存储期望页数，等生成文件列表后恢复
         if 'gen_file_pages' in data and data['gen_file_pages']:
             self._preset_gen_file_pages = data['gen_file_pages']
+        # 确保gen_pages_check按文件加载（显式处理）
+        if 'gen_pages_check' in data:
+            self.gen_pages_check.blockSignals(True)
+            self.gen_pages_check.setChecked(bool(data['gen_pages_check']))
+            self.gen_pages_check.blockSignals(False)
 
         # 更新config label
         self.preset_config_path = filepath
