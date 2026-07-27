@@ -2475,22 +2475,29 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "日期错误", "休息设置中\"做\"的天数必须大于0")
                 self.setDateStatusIcon(False)
                 return
-            current = QDate(start)
-            i = 0
-            cycle_pos = 0
-            total_cycle = work_days + rest_days
-            if total_cycle == 0:
-                total_cycle = 1
-            while i < file_count:
-                if cycle_pos < work_days:
+            if rest_days == 0:
+                current = QDate(start)
+                # 不休：每天连续安排
+                for _ in range(file_count):
                     dates.append(current)
-                    i += 1
-                    cycle_pos += 1
-                else:
-                    cycle_pos += 1
-                    if cycle_pos >= total_cycle:
-                        cycle_pos = 0
-                current = current.addDays(1)
+                    current = current.addDays(1)
+            else:
+                current = QDate(start)
+                i = 0
+                cycle_pos = 0
+                total_cycle = work_days + rest_days
+                if total_cycle == 0:
+                    total_cycle = 1
+                while i < file_count:
+                    if cycle_pos < work_days:
+                        dates.append(current)
+                        i += 1
+                        cycle_pos += 1
+                    else:
+                        cycle_pos += 1
+                        if cycle_pos >= total_cycle:
+                            cycle_pos = 0
+                    current = current.addDays(1)
 
         last_date = dates[-1]
         if end < last_date:
