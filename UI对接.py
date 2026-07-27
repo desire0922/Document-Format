@@ -61,7 +61,7 @@ class FileInfoThread(QThread):
                 try:
                     word_app = win32com.client.Dispatch("wps.Application")
                 except:
-                   word_app = win32com.client.Dispatch("Word.Application")
+                    word_app = win32com.client.Dispatch("Word.Application")
             word_app.Visible = False
             word_app.DisplayAlerts = 0  # 禁用所有Word对话框
             word_app.ScreenUpdating = False
@@ -125,9 +125,9 @@ class MainWindow(QMainWindow):
         self.initUI()
         self.examiners = []
         self.reviewers = []
-       self.preset_config_path = None
+        self.preset_config_path = None
         self._preset_gen_file_pages = None
-       self.process_file_list = []
+        self.process_file_list = []
         self.process_file_info = []
 
     def center(self):
@@ -1300,8 +1300,8 @@ class MainWindow(QMainWindow):
         self.header_right_edit.setObjectName("header_right_edit")
         h_header.addWidget(self.header_right_edit)
         h_header.addStretch()
-       hf_layout.addLayout(h_header)
-       # 页码
+        hf_layout.addLayout(h_header)
+        # 页码
         h_page = QHBoxLayout()
         self.insert_page_check = QCheckBox("插入页码")
         self.insert_page_check.setChecked(True)
@@ -1462,8 +1462,8 @@ class MainWindow(QMainWindow):
     def on_insert_page_toggled(self, checked):
         self.page_settings_group.setVisible(checked)
         self.page_position.setVisible(checked)
-       if not checked:
-           self.page_position.setCurrentText("居中")
+        if not checked:
+            self.page_position.setCurrentText("居中")
 
     def on_page_position_changed(self, position):
         pass
@@ -1976,7 +1976,7 @@ class MainWindow(QMainWindow):
         for idx, (fullpath, pages, seq_str) in enumerate(checked_files):
             # 将源文件序号转换为输出格式
             src_type = self.orig_seq_type_combo.currentText() if hasattr(self,
-                                                                         'orig_seq_type_combo') else self.seq_type_combo.currentText()
+                                                                          'orig_seq_type_combo') else self.seq_type_combo.currentText()
             try:
                 seq_num = int(seq_str)
             except ValueError:
@@ -1991,10 +1991,10 @@ class MainWindow(QMainWindow):
                 name += date_str
             name += output_seq + suffix + ".docx"
             hbox = QHBoxLayout()
-           label = QLabel(f"{idx + 1:02d}  {name}")
-           label.setToolTip(name)
+            label = QLabel(f"{idx + 1:02d}  {name}")
+            label.setToolTip(name)
             label.setObjectName(f"gen_file_label_{idx}")
-           hbox.addWidget(label)
+            hbox.addWidget(label)
             if show_pages:
                 spin = QSpinBox()
                 spin.setRange(1, 999)
@@ -2002,8 +2002,8 @@ class MainWindow(QMainWindow):
                 spin.setObjectName(f"expect_pages_{idx}")
                 hbox.addWidget(spin)
                 hbox.addWidget(QLabel("页"))
-           hbox.addStretch()
-           self.gen_file_layout.addLayout(hbox)
+            hbox.addStretch()
+            self.gen_file_layout.addLayout(hbox)
         # ===== 从加载的预设中恢复期望页数 =====
         if hasattr(self, '_preset_gen_file_pages') and self._preset_gen_file_pages:
             values = list(self._preset_gen_file_pages.values())
@@ -2187,7 +2187,7 @@ class MainWindow(QMainWindow):
         if not rows:
             return
         reply = QMessageBox.question(self, "确认删除", f"确定要删除选中的{len(rows)} 个文件吗？",
-                                     QMessageBox.Yes | QMessageBox.No)
+                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             # 从后往前删除，避免索引变化
             for row in rows:
@@ -2203,8 +2203,8 @@ class MainWindow(QMainWindow):
 
     def clear_list(self):
         reply = QMessageBox.question(self, "确认清空",
-                                     "清空后无法处理文件。是不是你的文件夹选错了？请回到“文件名”标签重新选择文件夹。\n是否要继续清空列表？",
-                                     QMessageBox.Yes | QMessageBox.No)
+                                      "清空后无法处理文件。是不是你的文件夹选错了？请回到“文件名”标签重新选择文件夹。\n是否要继续清空列表？",
+                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.process_table.setRowCount(0)
             self.process_file_list.clear()
@@ -2226,7 +2226,7 @@ class MainWindow(QMainWindow):
         self.update_gen_file_list()
         self.update_button_state()
 
-    
+
     def start_process(self):
         self.log_text.clear()
         self.log_message("开始排版...")
@@ -2784,8 +2784,8 @@ class MainWindow(QMainWindow):
             ('margin_left', self.margin_left),
             ('margin_right', self.margin_right),
             ('header_left_edit', self.header_left_edit),
-           ('header_right_edit', self.header_right_edit),
-           ('insert_page_check', self.insert_page_check),
+            ('header_right_edit', self.header_right_edit),
+            ('insert_page_check', self.insert_page_check),
             ('page_position', self.page_position),
             ('page_style', self.page_style),
             ('page_font', self.page_font),
@@ -2824,10 +2824,10 @@ class MainWindow(QMainWindow):
                                 filename_label = cw
                             elif isinstance(cw, QSpinBox):
                                 pages_spin = cw
-                   if filename_label and pages_spin is not None:
+                    if filename_label and pages_spin is not None:
                         fname = filename_label.toolTip().strip()
-                       file_pages[fname] = pages_spin.value()
-       data['gen_file_pages'] = file_pages
+                        file_pages[fname] = pages_spin.value()
+        data['gen_file_pages'] = file_pages
 
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
@@ -2859,12 +2859,12 @@ class MainWindow(QMainWindow):
 
         failed_items = []
 
-       # 执行加载
-       for name, value in data.items():
+        # 执行加载
+        for name, value in data.items():
             if name in ('examiners', 'reviewers', 'date_status_icon'):
-               continue
-           widget = getattr(self, name, None)
-           if widget is None:
+                continue
+            widget = getattr(self, name, None)
+            if widget is None:
                 failed_items.append(name)
                 continue
             try:
@@ -2875,14 +2875,14 @@ class MainWindow(QMainWindow):
         # 加载出题人、审题人
         if 'examiners' in data:
             self.examiners = list(data['examiners'])
-       if 'reviewers' in data:
-           self.reviewers = list(data['reviewers'])
+        if 'reviewers' in data:
+            self.reviewers = list(data['reviewers'])
 
         # 存储期望页数，等生成文件列表后恢复
         if 'gen_file_pages' in data and data['gen_file_pages']:
             self._preset_gen_file_pages = data['gen_file_pages']
 
-       # 更新config label
+        # 更新config label
         self.preset_config_path = filepath
         self.config_path_label.setText(f"配置文件：{filepath}")
 

@@ -3,15 +3,15 @@
 假期作业排版模块 - DocumentFormatter
 
 读取同学GUI的配置变量，对组卷网原始DOCX进行：
-  - 文件名解析（提取序号、日期）
-  - 文件名生成（按规则组装输出文件名）
-  - 日期分配（按做/休周期计算每套卷子的日期）
-  - 文档结构分析（定位各大题、参考答案）
-  - 输出文档构建（标题区 + 正文内容 + 页面格式）
+   - 文件名解析（提取序号、日期）
+   - 文件名生成（按规则组装输出文件名）
+   - 日期分配（按做/休周期计算每套卷子的日期）
+   - 文档结构分析（定位各大题、参考答案）
+   - 输出文档构建（标题区 + 正文内容 + 页面格式）
 
 用法：
-  formatter = DocumentFormatter(gui_instance)
-  output_path = formatter.process_file('源文件.docx', '输出目录')
+   formatter = DocumentFormatter(gui_instance)
+   output_path = formatter.process_file('源文件.docx', '输出目录')
 """
 
 import re
@@ -410,9 +410,9 @@ class DocumentFormatter:
         # 页边距
         # 页边距 (GUI名 -> python-docx节属性名)
         margin_map = {'margin_top': 'top_margin', 'margin_bottom': 'bottom_margin',
-                      'margin_left': 'left_margin', 'margin_right': 'right_margin'}
+                       'margin_left': 'left_margin', 'margin_right': 'right_margin'}
         for gui_name, default in [('margin_top', 2.54), ('margin_bottom', 2.54),
-                                   ('margin_left', 3.18), ('margin_right', 3.18)]:
+                                    ('margin_left', 3.18), ('margin_right', 3.18)]:
             try:
                 val = float(getattr(g, gui_name, default) or default)
                 section_attr = margin_map[gui_name]
@@ -454,10 +454,10 @@ class DocumentFormatter:
 
         # 页脚(左+右+页码共存)
         footer = section.footer
-       footer.is_linked_to_previous = False
+        footer.is_linked_to_previous = False
         fl_text = ""
         fr_text = ""
-       fp = footer.paragraphs[0]
+        fp = footer.paragraphs[0]
         fp.clear()
         if self._get_bool(g.insert_page_check):
             self._build_footer_with_page(fp, g, section, fl_text, fr_text)
