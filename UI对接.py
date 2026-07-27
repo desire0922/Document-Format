@@ -1098,17 +1098,10 @@ class MainWindow(QMainWindow):
         h_cycle.addWidget(self.cycle_type_combo)
         h_cycle.addStretch()
         sub_layout.addLayout(h_cycle)
-
         # ---- 4. 休息设置 ----
-        self.enable_rest_cb = QCheckBox("启用休息设置")
-        self.enable_rest_cb.setChecked(True)
-        self.enable_rest_cb.toggled.connect(lambda checked: self.rest_container.setVisible(checked))
-        sub_layout.addWidget(self.enable_rest_cb)
-
         self.rest_container = QWidget()
         rest_layout = QVBoxLayout(self.rest_container)
         rest_layout.setContentsMargins(20, 0, 0, 0)
-
         h_rest = QHBoxLayout()
         h_rest.setSpacing(0)
         h_rest.addWidget(QLabel("休息设置：做"))
@@ -1132,18 +1125,13 @@ class MainWindow(QMainWindow):
         self.rest_warning.setStyleSheet("color: red;")
         self.rest_warning.setVisible(False)
         rest_layout.addWidget(self.rest_warning)
-
         sub_layout.addWidget(self.rest_container)
-
         # 根据日期计算方式显示/隐藏休息设置
         def on_cycle_changed(mode):
             show = (mode == "自定义")
             self.rest_container.setVisible(show)
-            self.enable_rest_cb.setVisible(show)
-
-        self.cycle_type_combo.currentTextChanged.connect(on_cycle_changed)
+            self.cycle_type_combo.currentTextChanged.connect(on_cycle_changed)
         on_cycle_changed(self.cycle_type_combo.currentText())
-
         # 对齐方式
         hbox_sub_align = QHBoxLayout()
         hbox_sub_align.setSpacing(0)
@@ -2772,7 +2760,6 @@ class MainWindow(QMainWindow):
             ('end_date', self.end_date),
             ('enable_examiner_cb', self.enable_examiner_cb),
             ('enable_date_cb', self.enable_date_cb),
-            ('enable_rest_cb', self.enable_rest_cb),
             ('rest_do', self.rest_do),
             ('rest_rest', self.rest_rest),
 
@@ -2868,7 +2855,7 @@ class MainWindow(QMainWindow):
 
         # 执行加载
         for name, value in data.items():
-            if name in ('examiners', 'reviewers', 'date_status_icon', 'footer_left_edit', 'footer_right_edit', 'gen_file_pages', 'preset_source_files', 'header_left_edit', 'header_right_edit', 'gen_pages_check'):
+            if name in ('examiners', 'reviewers', 'date_status_icon', 'footer_left_edit', 'footer_right_edit', 'gen_file_pages', 'preset_source_files', 'header_left_edit', 'header_right_edit', 'gen_pages_check', 'enable_rest_cb'):
                 continue
             widget = getattr(self, name, None)
             if widget is None:
