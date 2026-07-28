@@ -18,8 +18,15 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QUrl
+from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QUrl, QTimer
 from PyQt5.QtGui import QFontDatabase, QColor, QIcon, QPixmap, QDesktopServices
+class ClickableLabel(QLabel):
+    """可点击的 QLabel，点击时发出 clicked 信号"""
+    clicked = pyqtSignal()
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
 import pythoncom
 import win32com.client
 import re
@@ -120,7 +127,7 @@ class MainWindow(QMainWindow):
         else:
             icon_path = "layout.ico"
         self.setWindowIcon(QIcon(icon_path))
-        self.setGeometry(100, 100, 1200, 900)
+        self.setGeometry(100, 100, 1200, 838)
         self.center()
         self.initUI()
         self.examiners = []
@@ -151,6 +158,32 @@ class MainWindow(QMainWindow):
             x = geometry.x() + (geometry.width() - fw) // 2
             y = geometry.y() + (geometry.height() - fh) // 2
             self.move(x, y)
+
+    def show_fullscreen_image(self, path):
+        """全屏显示图片，点击退出"""
+        self.fullscreen_dialog = QDialog()
+        self.fullscreen_dialog.setWindowFlags(
+            Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
+        self.fullscreen_dialog.setStyleSheet("background-color: black;")
+        layout = QVBoxLayout(self.fullscreen_dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        pixmap = QPixmap(path)
+        if not pixmap.isNull():
+            screen = QApplication.primaryScreen()
+            if screen:
+                screen_size = screen.size()
+                pixmap = pixmap.scaled(screen_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            label = QLabel()
+            label.setPixmap(pixmap)
+            label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(label)
+
+        # 延迟关闭避免事件重入导致崩溃
+        self.fullscreen_dialog.mousePressEvent = lambda event: QTimer.singleShot(0, self.fullscreen_dialog.close)
+        self.fullscreen_dialog.keyPressEvent = lambda event: QTimer.singleShot(0, self.fullscreen_dialog.close)
+        self.fullscreen_dialog.showFullScreen()
 
     def initUI(self):
         self.tabs = CustomTabWidget(self)
@@ -339,12 +372,28 @@ class MainWindow(QMainWindow):
                 if not tip_pixmap.isNull():
                     tip_loaded = True
         if tip_loaded:
-            tip_img = QLabel()
-            tip_pixmap = tip_pixmap.scaled(520, 520, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            right_widget = QWidget()
+            right_layout = QVBoxLayout(right_widget)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(6)
+            right_layout.setAlignment(Qt.AlignCenter)
+
+            tip_img = ClickableLabel()
+            tip_pixmap = tip_pixmap.scaledToHeight(560, Qt.SmoothTransformation)
             tip_img.setPixmap(tip_pixmap)
             tip_img.setAlignment(Qt.AlignCenter)
-            tip_img.setFixedSize(540, 540)
-            support_layout.addWidget(tip_img)
+            tip_img.setFixedSize(tip_pixmap.width(), tip_pixmap.height())
+            tip_img.setCursor(Qt.PointingHandCursor)
+            _tip_path = tip_path
+            tip_img.clicked.connect(lambda p=_tip_path: self.show_fullscreen_image(p))
+            right_layout.addWidget(tip_img)
+
+            hint_label = QLabel("👆点击查看大图")
+            hint_label.setAlignment(Qt.AlignCenter)
+            hint_label.setStyleSheet("font-size: 16px; color: #888; padding: 2px 0;")
+            right_layout.addWidget(hint_label)
+
+            support_layout.addWidget(right_widget)
         h_box = QHBoxLayout()
         h_box.addStretch()
         h_box.addWidget(support_box)
@@ -2336,10 +2385,23 @@ class MainWindow(QMainWindow):
                     word_app.Quit()
                 pythoncom.CoUninitialize()
 
+        # 确保前一个Word/WPS进程已完全退出
+        import time
+        time.sleep(0.5)
+        QApplication.processEvents()
+        # 强制结束残留的WINWORD.EXE/WPS进程，避免卡死
+        try:
+            import subprocess
+            subprocess.run("taskkill /f /im WINWORD.EXE 2>nul", shell=True)
+            subprocess.run("taskkill /f /im wps.exe 2>nul", shell=True)
+            subprocess.run("taskkill /f /im et.exe 2>nul", shell=True)
+        except Exception:
+            pass
+        time.sleep(0.3)
+        QApplication.processEvents()
         # PDF 导出
-        output_format = self.output_format.currentText()
-        if ".pdf" in output_format or "两者" in output_format:
-            pdf_files_exist = sum(1 for o in output_paths if o is not None)
+        output_format_index = self.output_format.currentIndex()  # 0=docx, 1=pdf, 2=两者
+        if output_format_index >= 1:
             self.log_message('正在导出PDF...')
             QApplication.processEvents()
             import pythoncom
@@ -2367,6 +2429,7 @@ class MainWindow(QMainWindow):
                         doc = pdf_word.Documents.Open(out)
                         doc.SaveAs(pdf_path, FileFormat=17)
                         doc.Close()
+                        QApplication.processEvents()
                         pdf_success += 1
                         self.log_message(f"PDF已生成：{os.path.basename(pdf_path)}")
                     except Exception as e:
@@ -2378,19 +2441,20 @@ class MainWindow(QMainWindow):
                 if pdf_word:
                     pdf_word.Quit()
                 pythoncom.CoUninitialize()
-            self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
             # 当只选PDF时删除中间.docx
-            if output_format == "Portable Document Format（.pdf）":
+            if output_format_index == 1:
                 deleted = 0
                 for out in output_paths:
                     if out and os.path.exists(out):
                         try:
                             os.remove(out)
                             deleted += 1
+                            QApplication.processEvents()
                         except Exception:
                             pass
-                if deleted > 0:
                     self.log_message(f"已删除 {deleted} 个临时.docx文件")
+
+            self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
 
 
         # 结果汇总
