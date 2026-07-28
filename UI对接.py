@@ -18,14 +18,36 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QUrl
+from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QUrl, QTimer
 from PyQt5.QtGui import QFontDatabase, QColor, QIcon, QPixmap, QDesktopServices
+class ClickableLabel(QLabel):
+    """可点击的 QLabel，点击时发出 clicked 信号"""
+    clicked = pyqtSignal()
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+import sys
+# 确保 pywin32 的 DLL 能找到（解决 IDE 中找不到 pywintypes 的问题）
+_pywin32_path = os.path.join(os.path.dirname(__file__), 'package', 'pywin32_system32')
+if not os.path.isdir(_pywin32_path):
+    # 尝试从 site-packages 找
+    import site
+    for sp in site.getsitepackages():
+        _p = os.path.join(sp, 'pywin32_system32')
+        if os.path.isdir(_p):
+            _pywin32_path = _p
+            break
+if os.path.isdir(_pywin32_path):
+    os.environ['PATH'] = _pywin32_path + os.pathsep + os.environ.get('PATH', '')
+    # 也加到 sys.path 供 import 使用
+    if _pywin32_path not in sys.path:
+        sys.path.insert(0, _pywin32_path)
+from docx_formatter import DocumentFormatter, SourceParseError
 import pythoncom
 import win32com.client
 import re
 import zipfile
-from docx_formatter import DocumentFormatter, SourceParseError
-
 
 class CustomTabWidget(QTabWidget):
 
@@ -40,7 +62,6 @@ class CustomTabWidget(QTabWidget):
                                     "标题页存在非法输入，请修正后再切换。")
                 return
         super().setCurrentIndex(index)
-
 
 class FileInfoThread(QThread):
     finished = pyqtSignal(list)
@@ -109,7 +130,140 @@ class FileInfoThread(QThread):
             pythoncom.CoUninitialize()
         self.finished.emit(result)
 
+# ==================== 内置序号列表 ====================
+NAME_LIST_01 = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73", "74", "75", "76", "77", "78", "79", "80", "81", "82", "83", "84", "85", "86", "87", "88", "89", "90", "91", "92", "93", "94", "95", "96", "97", "98", "99"]
+NAME_LIST_02 = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73", "74", "75", "76", "77", "78", "79", "80", "81", "82", "83", "84", "85", "86", "87", "88", "89", "90", "91", "92", "93", "94", "95", "96", "97", "98", "99"]
+NAME_LIST_03 = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十", "二十一", "二十二", "二十三", "二十四", "二十五", "二十六", "二十七", "二十八", "二十九", "三十", "三十一", "三十二", "三十三", "三十四", "三十五", "三十六", "三十七", "三十八", "三十九", "四十", "四十一", "四十二", "四十三", "四十四", "四十五", "四十六", "四十七", "四十八", "四十九", "五十", "五十一", "五十二", "五十三", "五十四", "五十五", "五十六", "五十七", "五十八", "五十九", "六十", "六十一", "六十二", "六十三", "六十四", "六十五", "六十六", "六十七", "六十八", "六十九", "七十", "七十一", "七十二", "七十三", "七十四", "七十五", "七十六", "七十七", "七十八", "七十九", "八十", "八十一", "八十二", "八十三", "八十四", "八十五", "八十六", "八十七", "八十八", "八十九", "九十", "九十一", "九十二", "九十三", "九十四", "九十五", "九十六", "九十七", "九十八", "九十九"]
 
+
+
+class FormatWorker(QThread):
+    """排版工作线程"""
+    log_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(dict)
+
+    def __init__(self, checked_paths, output_dir, expected_pages, output_format_index, page_check_enabled, parent_widget):
+        super().__init__()
+        self.checked_paths = checked_paths
+        self.output_dir = output_dir
+        self.expected_pages = expected_pages
+        self.output_format_index = output_format_index
+        self.page_check_enabled = page_check_enabled
+        self.parent_widget = parent_widget
+
+    def run(self):
+        from docx_formatter import DocumentFormatter, SourceParseError
+        formatter = DocumentFormatter(self.parent_widget)
+        success = 0
+        fail = 0
+        fail_msgs = []
+        output_paths = []
+        for src in self.checked_paths:
+            basename = os.path.basename(src)
+            self.log_signal.emit(f"正在处理：{basename}")
+            try:
+                out = formatter.process_file(src, self.output_dir)
+                output_paths.append(out)
+                success += 1
+                self.log_signal.emit(f"已完成 => {os.path.basename(out)}")
+            except SourceParseError as e:
+                fail += 1
+                output_paths.append(None)
+                msg = f"文件名格式不匹配 - {str(e)}"
+                fail_msgs.append(f"{basename}: {msg}")
+                self.log_signal.emit(f"失败：{basename} - {msg}")
+            except Exception as e:
+                fail += 1
+                output_paths.append(None)
+                msg = str(e)
+                fail_msgs.append(f"{basename}: {msg}")
+                self.log_signal.emit(f"失败：{basename} - {msg}")
+        # Formatting done, emit results
+        # ===== 页数校验 =====
+        mismatches = []
+        if self.page_check_enabled and self.expected_pages and output_paths:
+            self.log_signal.emit('正在验证页数...')
+            import pythoncom, win32com.client
+            pythoncom.CoInitialize()
+            word_app = None
+            try:
+                try: word_app = win32com.client.Dispatch('Kwps.Application')
+                except:
+                    try: word_app = win32com.client.Dispatch('wps.Application')
+                    except: word_app = win32com.client.Dispatch('Word.Application')
+                word_app.Visible = False
+                word_app.DisplayAlerts = 0
+                word_app.ScreenUpdating = False
+                for idx, out_path in enumerate(output_paths):
+                    if out_path is None: continue
+                    actual_pages = -1
+                    try:
+                        doc = word_app.Documents.Open(out_path)
+                        doc.Repaginate(); actual_pages = doc.ComputeStatistics(2); doc.Close()
+                    except: actual_pages = -1
+                    expected = self.expected_pages.get(idx, -1)
+                    if expected > 0 and actual_pages > 0 and actual_pages != expected:
+                        mismatches.append((os.path.basename(out_path), expected, actual_pages))
+                        self.log_signal.emit(f'页数不符：{os.path.basename(out_path)} 期望{expected}页，实际{actual_pages}页')
+            except Exception as e:
+                self.log_signal.emit(f'页数校验失败：{str(e)}')
+            finally:
+                if word_app: word_app.Quit()
+                pythoncom.CoUninitialize()
+            import time; time.sleep(0.5)
+            try:
+                import subprocess
+                subprocess.run('taskkill /f /im WINWORD.EXE', shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                subprocess.run('taskkill /f /im wps.exe', shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                subprocess.run('taskkill /f /im et.exe', shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            except: pass
+            time.sleep(0.3)
+                # ===== PDF导出 =====
+        if self.output_format_index >= 1:
+            self.log_signal.emit('正在导出PDF...')
+            import pythoncom, win32com.client
+            pythoncom.CoInitialize()
+            pdf_word = None; pdf_success = 0; pdf_fail = 0
+            try:
+                try: pdf_word = win32com.client.Dispatch('Kwps.Application')
+                except:
+                    try: pdf_word = win32com.client.Dispatch('wps.Application')
+                    except: pdf_word = win32com.client.Dispatch('Word.Application')
+                pdf_word.Visible = False
+                pdf_word.DisplayAlerts = 0
+                pdf_word.ScreenUpdating = False
+                for out_path in output_paths:
+                    if out_path is None: continue
+                    try:
+                        pdf_path = out_path.replace('.docx', '.pdf')
+                        doc = pdf_word.Documents.Open(out_path)
+                        doc.SaveAs(pdf_path, FileFormat=17); doc.Close()
+                        pdf_success += 1
+                        self.log_signal.emit(f'PDF已生成：{os.path.basename(pdf_path)}')
+                    except Exception as e:
+                        pdf_fail += 1
+                        self.log_signal.emit(f'PDF导出失败：{os.path.basename(out_path)} - {str(e)}')
+            except Exception as e:
+                self.log_signal.emit(f'PDF导出失败：{str(e)}')
+            finally:
+                if pdf_word: pdf_word.Quit()
+                pythoncom.CoUninitialize()
+            if self.output_format_index == 1:
+                deleted = 0
+                for out_path in output_paths:
+                    if out_path and os.path.exists(out_path):
+                        try: os.remove(out_path); deleted += 1
+                        except: pass
+                self.log_signal.emit(f'已删除 {deleted} 个临时.docx文件')
+            self.log_signal.emit(f'PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。')
+        results = {
+            'success': success,
+            'fail': fail,
+            'fail_msgs': fail_msgs,
+            'output_paths': output_paths,
+            'mismatches': mismatches,
+        }
+        self.finished_signal.emit(results)
 class MainWindow(QMainWindow):
 
     def __init__(self):
@@ -120,7 +274,7 @@ class MainWindow(QMainWindow):
         else:
             icon_path = "layout.ico"
         self.setWindowIcon(QIcon(icon_path))
-        self.setGeometry(100, 100, 1200, 900)
+        self.setGeometry(100, 100, 1200, 838)
         self.center()
         self.initUI()
         self.examiners = []
@@ -152,6 +306,55 @@ class MainWindow(QMainWindow):
             y = geometry.y() + (geometry.height() - fh) // 2
             self.move(x, y)
 
+    def show_fullscreen_image(self, path):
+
+        """全屏显示图片，点击退出"""
+        self.fullscreen_dialog = QDialog()
+        self.fullscreen_dialog.setWindowFlags(
+            Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
+        self.fullscreen_dialog.setStyleSheet("background-color: black;")
+        layout = QVBoxLayout(self.fullscreen_dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        pixmap = QPixmap(path)
+        if not pixmap.isNull():
+            screen = QApplication.primaryScreen()
+            if screen:
+                screen_size = screen.size()
+                pixmap = pixmap.scaled(screen_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            label = QLabel()
+            label.setPixmap(pixmap)
+            label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(label)
+
+        # 延迟关闭避免事件重入导致崩溃
+        self.fullscreen_dialog.mousePressEvent = lambda event: QTimer.singleShot(0, self.fullscreen_dialog.close)
+        self.fullscreen_dialog.keyPressEvent = lambda event: QTimer.singleShot(0, self.fullscreen_dialog.close)
+        self.fullscreen_dialog.showFullScreen()
+
+
+    def show_scrollable_message(self, title, content):
+        """显示可滚动的消息对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.resize(750, 500)
+        layout = QVBoxLayout(dialog)
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setStyleSheet('QTextEdit{font-size:18px;line-height:1.8;padding:12px;background-color:#fafafa;}')
+        text.setHtml(content)
+        layout.addWidget(text)
+        from PyQt5.QtWidgets import QPushButton, QHBoxLayout
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn = QPushButton("确定")
+        btn.setFixedWidth(100)
+        btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(btn)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        dialog.exec_()
     def initUI(self):
         self.tabs = CustomTabWidget(self)
         self.setCentralWidget(self.tabs)
@@ -339,12 +542,28 @@ class MainWindow(QMainWindow):
                 if not tip_pixmap.isNull():
                     tip_loaded = True
         if tip_loaded:
-            tip_img = QLabel()
-            tip_pixmap = tip_pixmap.scaled(520, 520, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            right_widget = QWidget()
+            right_layout = QVBoxLayout(right_widget)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(6)
+            right_layout.setAlignment(Qt.AlignCenter)
+
+            tip_img = ClickableLabel()
+            tip_pixmap = tip_pixmap.scaledToHeight(560, Qt.SmoothTransformation)
             tip_img.setPixmap(tip_pixmap)
             tip_img.setAlignment(Qt.AlignCenter)
-            tip_img.setFixedSize(540, 540)
-            support_layout.addWidget(tip_img)
+            tip_img.setFixedSize(tip_pixmap.width(), tip_pixmap.height())
+            tip_img.setCursor(Qt.PointingHandCursor)
+            _tip_path = tip_path
+            tip_img.clicked.connect(lambda p=_tip_path: self.show_fullscreen_image(p))
+            right_layout.addWidget(tip_img)
+
+            hint_label = QLabel("👆点击查看大图")
+            hint_label.setAlignment(Qt.AlignCenter)
+            hint_label.setStyleSheet("font-size: 16px; color: #888; padding: 2px 0;")
+            right_layout.addWidget(hint_label)
+
+            support_layout.addWidget(right_widget)
         h_box = QHBoxLayout()
         h_box.addStretch()
         h_box.addWidget(support_box)
@@ -474,12 +693,7 @@ class MainWindow(QMainWindow):
         self.orig_date_check = QCheckBox("日期")
         self.orig_date_check.setObjectName("orig_date_check")
         hbox2.addWidget(self.orig_date_check)
-        # 前缀
-        self.orig_prefix_edit = QLineEdit()
-        self.orig_prefix_edit.setToolTip("输入前缀，如 '2025-2026廉实语文'")
-        self.orig_prefix_edit.setObjectName("orig_prefix_edit")
-        hbox2.addWidget(self.orig_prefix_edit)
-        # 日期格式下拉框
+        # 日期格式下拉框（移到前缀前面）
         self.orig_date_format = QComboBox()
         self.orig_date_format.addItems([
             "yyyy年MM月dd日", "MM月dd日", "yyyy.MM.dd", "MM.dd",
@@ -491,6 +705,11 @@ class MainWindow(QMainWindow):
         hbox2.addWidget(self.orig_date_format)
         # 复选框控制显示
         self.orig_date_check.toggled.connect(self.orig_date_format.setVisible)
+        # 前缀
+        self.orig_prefix_edit = QLineEdit()
+        self.orig_prefix_edit.setToolTip("输入前缀，如 '2025-2026廉实语文'")
+        self.orig_prefix_edit.setObjectName("orig_prefix_edit")
+        hbox2.addWidget(self.orig_prefix_edit)
         # 序号标签
         label_seq = QLabel("+【文件序号】+")
         label_seq.setAlignment(Qt.AlignCenter)
@@ -513,7 +732,8 @@ class MainWindow(QMainWindow):
         label_docx.setStyleSheet("color: green; font-weight: bold;")
         hbox2.addWidget(label_docx)
         layout.addLayout(hbox2)
-
+        # 复选框控制显示
+        # 序号标签
         # ---- 生成文件名格式 ----
         hbox4 = QHBoxLayout()
         hbox4.addWidget(QLabel("生成文件名格式"))
@@ -521,12 +741,7 @@ class MainWindow(QMainWindow):
         self.gen_date_check = QCheckBox("日期")
         self.gen_date_check.setObjectName("gen_date_check")
         hbox4.addWidget(self.gen_date_check)
-        # 前缀
-        self.gen_prefix_edit = QLineEdit()
-        self.gen_prefix_edit.setToolTip("输入生成文件的前缀")
-        self.gen_prefix_edit.setObjectName("gen_prefix_edit")
-        hbox4.addWidget(self.gen_prefix_edit)
-        # 日期格式下拉框
+        # 日期格式下拉框（移到前缀前面）
         self.gen_date_format = QComboBox()
         self.gen_date_format.addItems([
             "yyyy年MM月dd日", "MM月dd日", "yyyy.MM.dd", "MM.dd",
@@ -537,6 +752,11 @@ class MainWindow(QMainWindow):
         self.gen_date_format.setVisible(False)
         hbox4.addWidget(self.gen_date_format)
         self.gen_date_check.toggled.connect(self.gen_date_format.setVisible)
+        # 前缀
+        self.gen_prefix_edit = QLineEdit()
+        self.gen_prefix_edit.setToolTip("输入生成文件的前缀")
+        self.gen_prefix_edit.setObjectName("gen_prefix_edit")
+        hbox4.addWidget(self.gen_prefix_edit)
         # 序号标签
         label_seq2 = QLabel("+【文件序号】+")
         label_seq2.setAlignment(Qt.AlignCenter)
@@ -558,7 +778,7 @@ class MainWindow(QMainWindow):
         label_docx2.setStyleSheet("color: green; font-weight: bold;")
         hbox4.addWidget(label_docx2)
         layout.addLayout(hbox4)
-
+        # 序号标签
         # 学科名称（带帮助图标）
         hbox_subject = QHBoxLayout()
         hbox_subject.addWidget(QLabel("学科名称："))
@@ -598,15 +818,12 @@ class MainWindow(QMainWindow):
         tip.setStyleSheet("color: gray; font-style: italic;")
         layout.addWidget(tip)
         layout.addStretch()
-
     def on_folder_changed(self):
         """文件夹路径改变时重置状态图标为红色×"""
         self.setStatusIcon(False)
-
     def on_sub_features_toggled(self, enabled):
         """控制副标题内部功能控件的显示/隐藏（仅影响内部按钮、日期等，不影响整个副标题组）"""
         self.sub_features_container.setVisible(enabled)
-
     def on_orig_date_toggled(self, checked):
         """控制原文件名日期相关控件的启用状态"""
         self.orig_date_edit.setEnabled(checked)
@@ -614,7 +831,6 @@ class MainWindow(QMainWindow):
         if not checked:
             # 取消勾选时，重置状态图标为红色×
             self.setStatusIcon(False)
-
     def browseFolder(self):
         folder = QFileDialog.getExistingDirectory(self, "选择文件夹")
         if folder:
@@ -624,13 +840,11 @@ class MainWindow(QMainWindow):
             # 自动填充输出目录，使用正斜杠
             output_dir = os.path.join(folder, "已排版文件").replace('\\', '/')
             self.output_folder_edit.setText(output_dir)
-
     def browseOutputFolder(self):
         folder = QFileDialog.getExistingDirectory(self, "选择输出文件夹")
         if folder:
             folder = folder.replace('\\', '/')
             self.output_folder_edit.setText(folder)
-
     def checkInput(self):
         folder = self.folder_edit.text().strip()
         if not folder:
@@ -669,7 +883,7 @@ class MainWindow(QMainWindow):
             escaped_prefix = re.escape(prefix)
             escaped_suffix = re.escape(suffix + ".docx")
             if use_date:
-                full_pattern = f"^{escaped_prefix}{date_pattern}{re.escape(seq_str)}{escaped_suffix}$"
+                full_pattern = f"^{date_pattern}{escaped_prefix}{re.escape(seq_str)}{escaped_suffix}$"
             else:
                 full_pattern = f"^{escaped_prefix}{re.escape(seq_str)}{escaped_suffix}$"
             regex = re.compile(full_pattern)
@@ -683,13 +897,17 @@ class MainWindow(QMainWindow):
             self.process_file_list = found_files  # 存储元组列表
             self.update_process_file_list()
             msg = "找到以下有效文件：\n" + "\n".join([os.path.basename(f[0]) for f in found_files])
-            QMessageBox.information(self, "检查结果", msg)
+            # ===== 改用可滚动对话框 =====
+            file_list = [os.path.basename(f[0]) for f in found_files]
+            html = '<h3>检查结果</h3>'
+            html += f'<p>找到 {len(found_files)} 个有效文件：</p>'
+            html += '<p>' + '<br>'.join(file_list) + '</p>'
+            self.show_scrollable_message('检查结果', html)
         else:
             self.setStatusIcon(False)
             self.process_file_list = []
             self.update_process_file_list()
             QMessageBox.warning(self, "检查结果", "未找到任何匹配的文件")
-
     def build_date_regex(self, fmt):
         if fmt == "yyyy年MM月dd日":
             return r"\d{4}年\d{1,2}月\d{1,2}日"
@@ -711,7 +929,6 @@ class MainWindow(QMainWindow):
             return r"\d{1,2}-\d{1,2}"
         else:
             return None
-
     def generate_date_variants(self, date, fmt):
         year = date.year()
         month = date.month()
@@ -736,26 +953,22 @@ class MainWindow(QMainWindow):
         elif fmt == "[dd]th,MM(Eng),yyyy":
             months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
             mon_eng = months[month - 1]
-
             def day_suffix(d):
                 if 4 <= d <= 20 or 24 <= d <= 30:
                     return "th"
                 else:
                     return {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
-
             s1 = f"{day:02d}{day_suffix(day)},{mon_eng},{year:04d}"
             s2 = f"{day}{day_suffix(day)},{mon_eng},{year:04d}"
             variants = [s1, s2]
         elif fmt == "[dd]th,MM(Eng)":
             months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
             mon_eng = months[month - 1]
-
             def day_suffix(d):
                 if 4 <= d <= 20 or 24 <= d <= 30:
                     return "th"
                 else:
                     return {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
-
             s1 = f"{day:02d}{day_suffix(day)},{mon_eng}"
             s2 = f"{day}{day_suffix(day)},{mon_eng}"
             variants = [s1, s2]
@@ -770,33 +983,16 @@ class MainWindow(QMainWindow):
         else:
             variants = [""]
         return list(set(variants))
-
     def getSeqListFromFile(self, seq_type):
-        """根据序号类型从外部文件读取序号列表"""
+        """根据序号类型返回内置序号列表"""
         if seq_type == "汉字一、二、三":
-            fname = "name_list_03"
+            return NAME_LIST_03
         elif seq_type == "数字01、02、03":
-            fname = "name_list_02"
+            return NAME_LIST_02
         elif seq_type == "数字1、2、3":
-            fname = "name_list_01"
+            return NAME_LIST_01
         else:
             return []
-        # 获取当前程序所在目录
-        base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-        file_path = os.path.join(base_dir, fname)
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                # 使用 eval 解析列表字符串
-                seq_list = eval(content)
-                if isinstance(seq_list, list):
-                    return seq_list
-                else:
-                    return []
-        except Exception as e:
-            print(f"读取序号文件失败：{e}")
-            return []
-
     def setStatusIcon(self, success):
         if success:
             self.status_icon.setText("√")
@@ -804,7 +1000,6 @@ class MainWindow(QMainWindow):
         else:
             self.status_icon.setText("×")
             self.status_icon.setStyleSheet("color: red; font-size: 20px; font-weight: bold;")
-
     # ==================== 标题标签页 ====================
     def initTitleTab(self, parent):
         layout = QVBoxLayout(parent)
@@ -814,7 +1009,6 @@ class MainWindow(QMainWindow):
         self.enable_header_cb.setChecked(True)
         self.enable_header_cb.blockSignals(False)
         layout.addWidget(self.enable_header_cb)
-
         group_header = QGroupBox("题头")
         group_header.setStyleSheet("QGroupBox { border: 1px solid gray; margin-top: 10px; }")
         header_layout = QVBoxLayout(group_header)
@@ -903,7 +1097,6 @@ class MainWindow(QMainWindow):
         self.header_warning.setVisible(False)
         header_layout.addWidget(self.header_warning)
         layout.addWidget(group_header)
-
         # 主标题功能开关
         self.enable_main_cb = QCheckBox("启用主标题功能")
         self.enable_main_cb.toggled.connect(self.on_main_enable_toggled)
@@ -911,7 +1104,6 @@ class MainWindow(QMainWindow):
         self.enable_main_cb.setChecked(True)
         self.enable_main_cb.blockSignals(False)
         layout.addWidget(self.enable_main_cb)
-
         group_main = QGroupBox("主标题")
         group_main.setStyleSheet("QGroupBox { border: 1px solid gray; margin-top: 10px; }")
         main_layout = QVBoxLayout(group_main)
@@ -1016,7 +1208,6 @@ class MainWindow(QMainWindow):
         self.main_warning.setVisible(False)
         main_layout.addWidget(self.main_warning)
         layout.addWidget(group_main)
-
         # 副标题功能开关（控制整个副标题组显示/隐藏）
         self.enable_sub_cb = QCheckBox("启用副标题功能")
         self.enable_sub_cb.toggled.connect(self.on_sub_enable_toggled)
@@ -1024,17 +1215,14 @@ class MainWindow(QMainWindow):
         self.enable_sub_cb.setChecked(True)
         self.enable_sub_cb.blockSignals(False)
         layout.addWidget(self.enable_sub_cb)
-
         group_sub = QGroupBox("副标题")
         group_sub.setStyleSheet("QGroupBox { border: 1px solid gray; margin-top: 10px; }")
         sub_layout = QVBoxLayout(group_sub)
-
         # ---- 1. 出题人、审题人录入 ----
         self.enable_examiner_cb = QCheckBox("启用出题人、审题人录入")
         self.enable_examiner_cb.setChecked(True)
         self.enable_examiner_cb.toggled.connect(lambda checked: self.examiner_container.setVisible(checked))
         sub_layout.addWidget(self.enable_examiner_cb)
-
         self.examiner_container = QWidget()
         examiner_layout = QVBoxLayout(self.examiner_container)
         examiner_layout.setContentsMargins(20, 0, 0, 0)  # 缩进
@@ -1042,17 +1230,14 @@ class MainWindow(QMainWindow):
         btn_examiner.clicked.connect(self.openExaminerDialog)
         examiner_layout.addWidget(btn_examiner)
         sub_layout.addWidget(self.examiner_container)
-
         # ---- 2. 日期设置 ----
         self.enable_date_cb = QCheckBox("启用日期设置")
         self.enable_date_cb.setChecked(True)
         self.enable_date_cb.toggled.connect(lambda checked: self.date_container.setVisible(checked))
         sub_layout.addWidget(self.enable_date_cb)
-
         self.date_container = QWidget()
         date_layout = QVBoxLayout(self.date_container)
         date_layout.setContentsMargins(20, 0, 0, 0)
-
         h_date = QHBoxLayout()
         h_start_group = QHBoxLayout()
         h_start_group.addWidget(QLabel("开始日期："))
@@ -1073,7 +1258,6 @@ class MainWindow(QMainWindow):
         h_date.addLayout(h_end_group)
         h_date.addStretch()
         date_layout.addLayout(h_date)
-
         h_date_check = QHBoxLayout()
         self.date_check_btn = QPushButton("检查日期")
         self.date_check_btn.setFixedSize(120, 38)
@@ -1088,9 +1272,7 @@ class MainWindow(QMainWindow):
         h_date_check.addWidget(self.date_status_icon)
         h_date_check.addStretch()
         date_layout.addLayout(h_date_check)
-
         sub_layout.addWidget(self.date_container)
-
         # ---- 3. 日期计算方式 ----
         h_cycle = QHBoxLayout()
         h_cycle.addWidget(QLabel("日期计算方式："))
@@ -1145,7 +1327,6 @@ class MainWindow(QMainWindow):
         self.sub_align.setObjectName("sub_align")
         hbox_sub_align.addStretch()
         sub_layout.addLayout(hbox_sub_align)
-
         # 字体设置
         hbox_sub_font = QHBoxLayout()
         h_sub_font_group = QHBoxLayout()
@@ -1189,11 +1370,9 @@ class MainWindow(QMainWindow):
         hbox_sub_font.addLayout(h_sub_extra_group)
         hbox_sub_font.addStretch()
         sub_layout.addLayout(hbox_sub_font)
-
         self.sub_line_spacing_container = QWidget()
         sub_line_spacing_layout = QVBoxLayout(self.sub_line_spacing_container)
         sub_line_spacing_layout.setContentsMargins(20, 0, 0, 0)
-
         sub_line_layout = QHBoxLayout()
         sub_line_layout.addWidget(QLabel("行距："))
         self.sub_line_spacing_type = QComboBox()
@@ -1218,17 +1397,13 @@ class MainWindow(QMainWindow):
         self.sub_warning.setStyleSheet("color: red;")
         self.sub_warning.setVisible(False)
         sub_line_spacing_layout.addWidget(self.sub_warning)
-
         sub_layout.addWidget(self.sub_line_spacing_container)
-
         layout.addWidget(group_sub)
-
         tip = QLabel(
             "设置完此标签后请检查输入是否有效，点击\u201c检查日期\u201d按钮，然后转到\u201c页面\u201d标签进行页面布局设置。")
         tip.setStyleSheet("color: gray; font-style: italic;")
         layout.addWidget(tip)
         layout.addStretch()
-
     # ==================== 页面标签页 ====================
     def initPageTab(self, parent):
         layout = QVBoxLayout(parent)
@@ -1292,6 +1467,50 @@ class MainWindow(QMainWindow):
         h_header.addStretch()
         hf_layout.addLayout(h_header)
         self.header_mode.currentTextChanged.connect(self._on_header_mode_changed)
+        self.header_font_container = QWidget()
+        self.header_font_container.setObjectName("header_font_container")
+        hf_font_layout = QHBoxLayout(self.header_font_container)
+        hf_font_layout.setContentsMargins(0, 0, 0, 0)
+        hf_font_layout.addWidget(QLabel("页眉字体："))
+        self.header_footer_font = QComboBox()
+        self.header_footer_font.addItems(QFontDatabase().families())
+        self.header_footer_font.setCurrentText("宋体")
+        self.header_footer_font.setObjectName("header_footer_font")
+        hf_font_layout.addWidget(self.header_footer_font)
+        hf_font_layout.addSpacing(15)
+        hf_font_layout.addWidget(QLabel("字号："))
+        self.header_footer_font_size = QComboBox()
+        self.header_footer_font_size.addItems([
+            "初号", "小初", "一号", "小一", "二号", "小二", "三号", "小三",
+            "四号", "小四", "五号", "小五", "六号", "小六", "七号", "八号",
+            "8", "9", "10", "11", "12", "14", "16", "18", "20", "22", "24",
+            "26", "28", "30", "36", "48", "72"
+        ])
+        self.header_footer_font_size.setCurrentText("五号")
+        self.header_footer_font_size.setObjectName("header_footer_font_size")
+        hf_font_layout.addWidget(self.header_footer_font_size)
+        hf_font_layout.addSpacing(15)
+        self.header_footer_bold = QCheckBox("加粗")
+        self.header_footer_bold.setObjectName("header_footer_bold")
+        hf_font_layout.addWidget(self.header_footer_bold)
+        hf_font_layout.addSpacing(10)
+        self.header_footer_underline = QCheckBox("下划线")
+        self.header_footer_underline.setObjectName("header_footer_underline")
+        hf_font_layout.addWidget(self.header_footer_underline)
+        hf_font_layout.addSpacing(10)
+        self.header_footer_italic = QCheckBox("斜体")
+        self.header_footer_italic.setObjectName("header_footer_italic")
+        hf_font_layout.addWidget(self.header_footer_italic)
+        hf_font_layout.addSpacing(10)
+        hf_font_layout.addWidget(QLabel("字体颜色："))
+        self.header_footer_color_btn = QPushButton()
+        self.header_footer_color_btn.setFixedSize(30, 20)
+        self.header_footer_color_btn.setStyleSheet("QPushButton { background-color: black; border: 1px solid #666; border-radius: 3px; } QPushButton:hover { border: 2px solid white; }")
+        self.header_footer_color_btn.clicked.connect(lambda: self.pickColor(self.header_footer_color_btn))
+        self.header_footer_color_btn.setObjectName("header_footer_color_btn")
+        hf_font_layout.addWidget(self.header_footer_color_btn)
+        hf_font_layout.addStretch()
+        hf_layout.addWidget(self.header_font_container)
         self._on_header_mode_changed(self.header_mode.currentText())
         h_page = QHBoxLayout()
         self.insert_page_check = QCheckBox("插入页码")
@@ -1359,32 +1578,6 @@ class MainWindow(QMainWindow):
         h_page_format.addStretch()
         page_set_layout.addLayout(h_page_format)
         hf_layout.addWidget(self.page_settings_group)
-        # 页眉页脚字体设置
-        hf_font_layout = QHBoxLayout()
-        hf_font_layout.addWidget(QLabel("页眉字体："))
-        self.header_footer_font = QComboBox()
-        self.header_footer_font.addItems(QFontDatabase().families())
-        self.header_footer_font.setCurrentText("宋体")
-        self.header_footer_font.setObjectName("header_footer_font")
-        hf_font_layout.addWidget(self.header_footer_font)
-        hf_font_layout.addSpacing(15)
-        hf_font_layout.addWidget(QLabel("字号："))
-        self.header_footer_font_size = QComboBox()
-        self.header_footer_font_size.addItems([
-            "初号", "小初", "一号", "小一", "二号", "小二", "三号", "小三",
-            "四号", "小四", "五号", "小五", "六号", "小六", "七号", "八号",
-            "8", "9", "10", "11", "12", "14", "16", "18", "20", "22", "24",
-            "26", "28", "30", "36", "48", "72"
-        ])
-        self.header_footer_font_size.setCurrentText("五号")
-        self.header_footer_font_size.setObjectName("header_footer_font_size")
-        hf_font_layout.addWidget(self.header_footer_font_size)
-        hf_font_layout.addSpacing(15)
-        self.header_footer_bold = QCheckBox("加粗")
-        self.header_footer_bold.setObjectName("header_footer_bold")
-        hf_font_layout.addWidget(self.header_footer_bold)
-        hf_font_layout.addStretch()
-        hf_layout.addLayout(hf_font_layout)
         self.insert_page_check.toggled.connect(self.on_insert_page_toggled)
         self.page_position.currentTextChanged.connect(self.on_page_position_changed)
         self.on_insert_page_toggled(self.insert_page_check.isChecked())
@@ -1449,25 +1642,22 @@ class MainWindow(QMainWindow):
         tip.setStyleSheet("color: gray; font-style: italic;")
         layout.addWidget(tip)
         layout.addStretch()
-
     def on_insert_page_toggled(self, checked):
         self.page_settings_group.setVisible(checked)
         self.page_position.setVisible(checked)
         if not checked:
             self.page_position.setCurrentText("居中")
-
     def on_page_position_changed(self, position):
         pass
-
     def _on_header_mode_changed(self, mode):
         has_header = mode != '无页眉'
         self.header_text_label.setVisible(has_header)
         self.header_text_edit.setVisible(has_header)
+        if hasattr(self, 'header_font_container'):
+            self.header_font_container.setVisible(has_header)
         if mode == '无页眉':
             self.header_text_edit.clear()
-
     # ==================== 处理标签页 ====================
-
     def initProcessTab(self, parent):
         layout = QVBoxLayout(parent)
         tip = QLabel(
@@ -1504,17 +1694,16 @@ class MainWindow(QMainWindow):
         self.move_down_btn.clicked.connect(self.move_down)
         self.add_file_btn = QPushButton("添加文件")
         self.add_file_btn.clicked.connect(self.add_files)
-        hbox_buttons.addWidget(self.add_file_btn)
         self.delete_btn = QPushButton("删除所选")
         self.delete_btn.clicked.connect(self.delete_selected)
         self.clear_btn = QPushButton("清空")
         self.clear_btn.clicked.connect(self.clear_list)
+        hbox_buttons.addWidget(self.add_file_btn)
         hbox_buttons.addWidget(self.move_up_btn)
         hbox_buttons.addWidget(self.move_down_btn)
-        hbox_buttons.addWidget(self.add_file_btn)
+        hbox_buttons.addStretch()
         hbox_buttons.addWidget(self.delete_btn)
         hbox_buttons.addWidget(self.clear_btn)
-        hbox_buttons.addStretch()
         layout.addLayout(hbox_buttons)
         # ---- 第二个生成文件列表 ----
         # 复选框：设置并检查生成文件的期望页数
@@ -1566,6 +1755,10 @@ class MainWindow(QMainWindow):
         self.output_format.setObjectName("output_format")
         hbox_format.addWidget(self.output_format)
         hbox_format.addStretch()
+        export_log_btn = QPushButton('导出排版日志')
+        export_log_btn.clicked.connect(self.export_log)
+        export_log_btn.setObjectName("export_log_btn")
+        hbox_format.addWidget(export_log_btn)
         layout.addLayout(hbox_format)
         # 保存预设按钮
         hbox_preset = QHBoxLayout()
@@ -1580,7 +1773,7 @@ class MainWindow(QMainWindow):
         # 一键排版按钮
         self.process_btn = QPushButton("一键排版")
         self.process_btn.setFixedSize(200, 40)
-        self.process_btn.setStyleSheet("QPushButton { font-size: 18px; font-weight: bold; background-color: #4CAF50; color: white; border-radius: 8px; } QPushButton:hover { background-color: #2E7D32; }")
+        self.process_btn.setStyleSheet("QPushButton { font-size: 18px; font-weight: bold; background-color: #4CAF50; color: white; border-radius: 8px; } QPushButton:hover { background-color: #2E7D32; } QPushButton:disabled { background-color: #9E9E9E; color: #E0E0E0; }")
         self.process_btn.clicked.connect(self.start_process)
         hbox_process = QHBoxLayout()
         hbox_process.addStretch()
@@ -1598,7 +1791,6 @@ class MainWindow(QMainWindow):
         self.process_table.setColumnHidden(1, False)
         self.gen_pages_check.setEnabled(True)
         self.gen_pages_check.setChecked(True)
-
     def seq_int_to_str(self, num):
         """将整数转换为当前序号类型的字符串"""
         seq_type = self.seq_type_combo.currentText()
@@ -1614,7 +1806,6 @@ class MainWindow(QMainWindow):
                 return f"_{num}"
         else:
             return f"_{num}"
-
     def add_files(self):
         """添加额外文件到列表"""
         files, _ = QFileDialog.getOpenFileNames(
@@ -1622,8 +1813,88 @@ class MainWindow(QMainWindow):
         )
         if not files:
             return
+        # 验证文件名是否符合要求
+        prefix_chk = self.orig_prefix_edit.text().strip()
+        suffix_chk = self.orig_suffix_edit.text().strip()
+        use_date_chk = self.orig_date_check.isChecked()
+        date_pattern_chk = ""
+        if use_date_chk:
+            fmt_chk = self.orig_date_format.currentText()
+            date_pattern_chk = self.build_date_regex(fmt_chk)
+        seq_type_chk = self.orig_seq_type_combo.currentText()
+        seq_strs_chk = self.getSeqListFromFile(seq_type_chk)
+        bad_files = []
+        good_files = []
+        for f in files:
+            base_chk = os.path.basename(f)
+            matched = False
+            for seq_s in seq_strs_chk:
+                escaped_p = re.escape(prefix_chk)
+                escaped_s = re.escape(suffix_chk + ".docx")
+                if use_date_chk and date_pattern_chk:
+                    pat = f"^{date_pattern_chk}{escaped_p}{re.escape(seq_s)}{escaped_s}$"
+                else:
+                    pat = f"^{escaped_p}{re.escape(seq_s)}{escaped_s}$"
+                if re.match(pat, base_chk):
+                    matched = True
+                    break
+            if matched:
+                good_files.append(f)
+            else:
+                bad_files.append(f)
+        if bad_files:
+            # 过滤掉已经不存在的文件
+            bad_files = [f for f in bad_files if os.path.exists(f)]
+            if not bad_files:
+                QMessageBox.information(self, "提示", "选中的文件均不存在，无法重命名。")
+                return
+            # 生成新文件名列表
+            max_seq = self.get_max_seq_from_table()
+            rename_items = []
+            for idx_chk, f in enumerate(bad_files):
+                    seq_str_new = self.seq_int_to_str(max_seq + idx_chk + 1)
+                    date_str_new = ""
+                    if use_date_chk:
+                        fmt_new = self.orig_date_format.currentText()
+                        date_str_new = self.format_date_for_output(QDate.currentDate(), fmt_new)
+                    new_name = date_str_new + prefix_chk + seq_str_new + suffix_chk + ".docx"
+                    new_path = os.path.join(os.path.dirname(f), new_name).replace("\\", "/")
+                    rename_items.append((f, new_path, os.path.basename(f), new_name))
+            if not self.show_rename_preview(rename_items):
+                return
+            failed_rename = []
+            renamed = []
+            renamed_seqs = []
+            for idx, (old_path, new_path, _, new_name) in enumerate(rename_items):
+                planned_seq = self.seq_int_to_str(max_seq + idx + 1)
+                try:
+                    if os.path.exists(new_path):
+                        os.remove(new_path)
+                    os.rename(old_path, new_path)
+                    renamed.append(new_path)
+                    renamed_seqs.append(planned_seq)
+                except Exception as e:
+                    failed_rename.append((old_path, str(e)))
+                    if os.path.exists(old_path):
+                        renamed.append(old_path)
+                        renamed_seqs.append(planned_seq)
+            if failed_rename:
+                msg = "以下文件重命名失败：\n" + "\n".join([err for p, err in failed_rename])
+                # ===== 改用可滚动对话框 =====
+                err_list = [err for p, err in failed_rename]
+                html = '<h3>重命名失败</h3>'
+                html += f'<p>共 {len(failed_rename)} 个文件重命名失败：</p>'
+                html += '<p>' + '<br>'.join(err_list) + '</p>'
+                self.show_scrollable_message('重命名失败', html)
+            renamed_seqs_list = renamed_seqs
+            renamed_files = renamed
+            self.setDateStatusIcon(False)
+            QMessageBox.information(self, "提示", "文件名已修改，请在\"标题\"标签页中重新检查日期。")
+        else:
+            renamed_files = []
+            renamed_seqs_list = []
+        files = good_files + renamed_files  # 包含已重命名的文件
         seq_type = self.orig_seq_type_combo.currentText()
-
         def extract_seq_from_filename(fname):
             base = os.path.splitext(os.path.basename(fname))[0]
             if seq_type == "数字01、02、03":
@@ -1640,10 +1911,9 @@ class MainWindow(QMainWindow):
                     if base.endswith(seq):
                         return seq
             return None
-
-        seqs = []
+        seqs = list(renamed_seqs_list)  # 已重命名的文件序号的集合
         unknown = []
-        for f in files:
+        for f in files[len(renamed_files):]:
             seq = extract_seq_from_filename(f)
             if seq is not None:
                 seqs.append(seq)
@@ -1654,13 +1924,34 @@ class MainWindow(QMainWindow):
         files = [f.replace('\\', '/') for f in files]
         # 处理未知文件
         if unknown:
-            reply = QMessageBox.question(
-                self, "序号选择",
-                f"以下 {len(unknown)} 个文件未能自动提取序号：\n" + "\n".join([os.path.basename(f) for f in unknown]) +
-                "\n\n请选择序号分配方式：",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
+            # ===== 自定义序号选择对话框 =====
+            dlg = QDialog(self)
+            dlg.setWindowTitle("序号选择")
+            dlg.resize(600, 400)
+            dlg_layout = QVBoxLayout(dlg)
+            unknown_names = [os.path.basename(f) for f in unknown]
+            file_text = QTextEdit()
+            file_text.setReadOnly(True)
+            file_html = '<h3>以下文件未能自动提取序号：</h3>'
+            file_html += '<p>' + '<br>'.join(unknown_names) + '</p>'
+            file_text.setHtml(file_html)
+            dlg_layout.addWidget(file_text)
+            from PyQt5.QtWidgets import QPushButton, QHBoxLayout
+            btn_layout = QHBoxLayout()
+            btn_auto = QPushButton('自动按顺序添加到列表末尾')
+            btn_manual = QPushButton('自行输入序号')
+            btn_layout.addStretch()
+            btn_layout.addWidget(btn_auto)
+            btn_layout.addSpacing(20)
+            btn_layout.addWidget(btn_manual)
+            btn_layout.addStretch()
+            dlg_layout.addLayout(btn_layout)
+            # 连接按钮
+            result = [False]  # 默认自行输入
+            btn_auto.clicked.connect(lambda: [result.__setitem__(0, True), dlg.accept()])
+            btn_manual.clicked.connect(dlg.accept)
+            dlg.exec_()
+            reply = QMessageBox.Yes if result[0] else QMessageBox.No
             if reply == QMessageBox.Yes:
                 # 接着列表中的序号
                 for i, f in enumerate(unknown):
@@ -1682,10 +1973,21 @@ class MainWindow(QMainWindow):
             self.process_file_list.append((f, seq))
         # 刷新表格
         self.update_process_file_list()
-
+        self.setDateStatusIcon(False)
+        QMessageBox.information(self, "提示", "文件名已更新，请在\"标题\"标签页中重新检查日期。")
     def get_max_seq_from_table(self):
         """从当前表格中获取最大的序号（用于接着序号）"""
         max_val = 0
+        # 先从表格中读取序号（表格数据最实时）
+        for row in range(self.process_table.rowCount()):
+            item = self.process_table.item(row, 0)
+            if item:
+                seq_str = item.data(Qt.UserRole + 1)
+                if seq_str and seq_str.isdigit():
+                    val = int(seq_str)
+                    if val > max_val:
+                        max_val = val
+        # 再从process_file_list读取（补充）
         for item in self.process_file_list:
             seq_str = item[1]  # 序号字符串
             # 转换为数字
@@ -1701,7 +2003,42 @@ class MainWindow(QMainWindow):
                     if val > max_val:
                         max_val = val
         return max_val
-
+    def show_rename_preview(self, items):
+        """显示重命名预览对话框，返回True表示确认重命名"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("重命名预览")
+        dialog.resize(600, 400)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("以下文件将被重命名，请确认或调整："))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        line_edits = []
+        for i_idx, item in enumerate(items):
+            old_path, new_path, old_name, new_name = item
+            hbox = QHBoxLayout()
+            hbox.addWidget(QLabel(f"{i_idx+1}. {old_name}  ->  "))
+            le = QLineEdit(new_name)
+            le.setObjectName(f"rename_edit_{i_idx}")
+            hbox.addWidget(le)
+            scroll_layout.addLayout(hbox)
+            line_edits.append(le)
+        scroll.setWidget(scroll_widget)
+        layout.addWidget(scroll)
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+        layout.addWidget(btn_box)
+        if dialog.exec_() == QDialog.Accepted:
+            for i_idx, item in enumerate(items):
+                old_path, new_path, old_name, new_name_orig = item
+                new_name = line_edits[i_idx].text().strip()
+                if new_name:
+                    new_path2 = os.path.join(os.path.dirname(old_path), new_name).replace("\\", "/")
+                    items[i_idx] = (old_path, new_path2, old_name, new_name)
+            return True
+        return False
     def show_manual_seq_dialog(self, files, seqs):
         """显示手动输入序号的对话框"""
         dialog = QDialog(self)
@@ -1732,7 +2069,6 @@ class MainWindow(QMainWindow):
         btn_box.accepted.connect(dialog.accept)
         btn_box.rejected.connect(dialog.reject)
         layout.addWidget(btn_box)
-
     def show_manual_seq_dialog(self, files, seqs, max_seq):
         """显示手动输入序号的对话框"""
         dialog = QDialog(self)
@@ -1773,7 +2109,6 @@ class MainWindow(QMainWindow):
         else:
             # 取消，清空 seqs 以便上层判断
             seqs.clear()
-
     def on_add_files_ready(self, info_list):
         # 将新文件信息追加到 process_file_list 和 process_file_info
         if not hasattr(self, 'process_file_list') or self.process_file_list is None:
@@ -1840,13 +2175,11 @@ class MainWindow(QMainWindow):
         self.update_button_state()
         self.update_gen_file_list()
         QMessageBox.information(self, "添加完成", f"成功添加 {len(info_list)} 个文件。")
-
     def on_table_item_changed(self, item):
         """当表格项发生变化时，如果变化的是第0列（文件名列），则更新生成文件列表"""
         if item.column() == 0:
             self._update_error_state()
             self.update_gen_file_list()
-
     def update_process_file_list(self):
         self.process_table.setRowCount(0)
         if not self.process_file_list:
@@ -1868,7 +2201,6 @@ class MainWindow(QMainWindow):
         self.thread.finished.connect(self.on_file_info_ready)
         self.thread.error_signal.connect(lambda msg: QMessageBox.critical(self, "错误", msg))
         self.thread.start()
-
     def on_file_info_ready(self, info_list):
         self.process_table.setRowCount(0)
         self.process_file_info = info_list
@@ -1925,7 +2257,7 @@ class MainWindow(QMainWindow):
         self._update_error_state()
         self.update_button_state()
         self.update_gen_file_list()
-
+        self._check_duplicate_gen_filenames()
     def update_gen_file_list(self):
         self.gen_label.setText(
             "下方显示的是生成文件，请填写文件期望页数并检查文件名是否符合要求：" if self.gen_pages_check.isChecked()
@@ -1967,12 +2299,8 @@ class MainWindow(QMainWindow):
         prefix = self.gen_prefix_edit.text().strip() or "未命名"
         suffix = self.gen_suffix_edit.text().strip()
         use_date = self.gen_date_check.isChecked()
-        date_str = ""
-        if use_date:
-            fmt = self.gen_date_format.currentText()
-            date_str = self.format_date_for_output(QDate.currentDate(), fmt)
+        date_fmt = self.gen_date_format.currentText() if use_date else None
         show_pages = self.gen_pages_check.isChecked()
-        # 填充布局
         for idx, (fullpath, pages, seq_str) in enumerate(checked_files):
             # 将源文件序号转换为输出格式
             src_type = self.orig_seq_type_combo.currentText() if hasattr(self,
@@ -1986,9 +2314,9 @@ class MainWindow(QMainWindow):
                     if seq_str in seq_list:
                         seq_num = seq_list.index(seq_str) + 1
             output_seq = self.seq_int_to_str(seq_num) if seq_num > 0 else seq_str
-            name = prefix
-            if use_date and date_str:
-                name += date_str
+            file_date_idx = (seq_num - 1) if seq_num > 0 else idx
+            date_str = self._get_date_for_index(file_date_idx, date_fmt) if use_date and date_fmt else ""
+            name = date_str + prefix if use_date and date_str else prefix
             name += output_seq + suffix + ".docx"
             hbox = QHBoxLayout()
             label = QLabel(f"{idx + 1:02d}  {name}")
@@ -2028,7 +2356,98 @@ class MainWindow(QMainWindow):
                                                 cw.setValue(self._preset_gen_file_pages[lbl_text])
                                             break
                                 break
-
+    def _check_duplicate_gen_filenames(self):
+        """检查生成文件名重复，若有则弹窗修改或删除"""
+        from collections import defaultdict
+        while True:
+            name_map = defaultdict(list)
+            prefix = self.gen_prefix_edit.text().strip() or '未命名'
+            suffix = self.gen_suffix_edit.text().strip()
+            use_date = self.gen_date_check.isChecked()
+            date_fmt = self.gen_date_format.currentText() if use_date else ''
+            for row in range(self.process_table.rowCount()):
+                item = self.process_table.item(row, 0)
+                if item and item.checkState() == Qt.Checked:
+                    seq_str = item.data(Qt.UserRole + 1)
+                    fullpath = item.data(Qt.UserRole)
+                    try: seq_num = int(seq_str)
+                    except: seq_num = 0
+                    output_seq = self.seq_int_to_str(seq_num) if seq_num > 0 else seq_str
+                    date_str = self._get_date_for_index(seq_num - 1, date_fmt) if use_date and date_fmt and seq_num > 0 else ''
+                    gen_name = date_str + prefix + output_seq + suffix + '.docx'
+                    name_map[gen_name].append((row, seq_str, fullpath))
+            duplicates = {n: items for n, items in name_map.items() if len(items) > 1}
+            if not duplicates:
+                break
+            dup_rows = sorted(set(r for items in duplicates.values() for r, _, _ in items))
+            dlg = QDialog(self)
+            dlg.setWindowTitle('修改重复序号')
+            dlg.resize(650, 500)
+            dlg_layout = QVBoxLayout(dlg)
+            dlg_layout.addWidget(QLabel('以下文件生成文件名重复，请修改序号或点击“删除”：'))
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            sw = QWidget()
+            sl = QVBoxLayout(sw)
+            spin_widgets = {}  # row -> QSpinBox
+            to_delete = set()  # 要删除的行号
+            row_paths = {}
+            row_widgets = {}  # row -> (hbox, container_widget)
+            for row in dup_rows:
+                item = self.process_table.item(row, 0)
+                if not item: continue
+                fp = item.data(Qt.UserRole)
+                row_paths[row] = fp
+                seq_str = item.data(Qt.UserRole + 1)
+                hbox = QHBoxLayout()
+                lbl = QLabel(os.path.basename(fp))
+                lbl.setMinimumWidth(200)
+                hbox.addWidget(lbl)
+                hbox.addWidget(QLabel('序号:'))
+                spin = QSpinBox()
+                spin.setRange(1, 999)
+                try: spin.setValue(int(seq_str))
+                except: spin.setValue(1)
+                spin_widgets[row] = spin
+                hbox.addWidget(spin)
+                del_state = [False]  # 每个文件独立的删除状态
+                del_btn = QPushButton('删除')
+                del_btn.setFixedWidth(60)
+                del_btn.setStyleSheet('QPushButton{color:red;}')
+                del_btn.clicked.connect(lambda *a, ds=del_state, r=row, sp=spin, bt=del_btn, td=to_delete: [
+                    ds.__setitem__(0, not ds[0]),
+                    sp.setEnabled(not ds[0]),
+                    bt.setText('恢复') if ds[0] else bt.setText('删除'),
+                    bt.setStyleSheet('QPushButton{color:green;}') if ds[0] else bt.setStyleSheet('QPushButton{color:red;}'),
+                    td.add(r) if ds[0] else td.discard(r),
+                ][-1])
+                hbox.addWidget(del_btn)
+                hbox.addStretch()
+                sl.addLayout(hbox)
+            scroll.setWidget(sw)
+            dlg_layout.addWidget(scroll)
+            from PyQt5.QtWidgets import QDialogButtonBox
+            btn_box = QDialogButtonBox(QDialogButtonBox.Ok)
+            btn_box.button(QDialogButtonBox.Ok).setText('确定')
+            btn_box.accepted.connect(dlg.accept)
+            dlg_layout.addWidget(btn_box)
+            if dlg.exec_() != QDialog.Accepted:
+                break
+            # 应用删除
+            for row in sorted(to_delete, reverse=True):
+                self.process_table.removeRow(row)
+            # 应用序号修改
+            for old_row, spin in spin_widgets.items():
+                if old_row in to_delete: continue
+                fp = row_paths.get(old_row)
+                if not fp: continue
+                new_seq_str = f'{spin.value():02d}'
+                for r in range(self.process_table.rowCount()):
+                    it = self.process_table.item(r, 0)
+                    if it and it.data(Qt.UserRole) == fp:
+                        it.setData(Qt.UserRole + 1, new_seq_str)
+                        break
+            self.update_gen_file_list()
     def format_date_for_output(self, date, fmt):
         year = date.year()
         month = date.month()
@@ -2063,12 +2482,48 @@ class MainWindow(QMainWindow):
             return f"{month:02d}-{day:02d}"
         else:
             return ""
+    def _get_date_for_index(self, file_idx, fmt):
+        """根据工作计划计算第file_idx个文件对应的日期"""
+        start = self.start_date.date()
+        mode = self.cycle_type_combo.currentText()
+        if mode == "按正常工作日安排":
+            current = QDate(start)
+            i = 0
+            while i <= file_idx:
+                if current.dayOfWeek() <= 5:
+                    i += 1
+                if i <= file_idx:
+                    current = current.addDays(1)
+            return self.format_date_for_output(current, fmt)
+        else:
+            work_days = self.rest_do.value()
+            rest_days = self.rest_rest.value()
+            if work_days <= 0:
+                return self.format_date_for_output(QDate.currentDate(), fmt)
+            if rest_days == 0:
+                return self.format_date_for_output(QDate(start).addDays(file_idx), fmt)
+            current = QDate(start)
+            i = 0
+            cycle_pos = 0
+            total_cycle = work_days + rest_days
+            if total_cycle == 0:
+                total_cycle = 1
+            while i <= file_idx:
+                if cycle_pos < work_days:
+                    i += 1
+                    cycle_pos += 1
+                else:
+                    cycle_pos += 1
+                    if cycle_pos >= total_cycle:
+                        cycle_pos = 0
+                if i <= file_idx:
+                    current = current.addDays(1)
+            return self.format_date_for_output(current, fmt)
 
     def on_gen_pages_check_toggled(self, checked):
         """控制生成文件列表是否显示期望页数输入框"""
         # 直接重新生成列表
         self.update_gen_file_list()
-
     def apply_first_pages(self):
         """将第一项的期望页数应用到所有项"""
         # 获取第一个生成文件行的期望页数spinbox
@@ -2084,14 +2539,13 @@ class MainWindow(QMainWindow):
         for spin in spinboxes[1:]:
             spin.setValue(first_val)
         QMessageBox.information(self, "应用成功", f"已将第一项页数 ({first_val}) 应用到所有项。")
-
     def update_button_state(self):
         selected = self.process_table.selectedItems()
         has_selection = len(selected) > 0
         self.process_btn.setEnabled(not self._has_checked_errors())
         self.move_down_btn.setEnabled(has_selection)
+        self.move_up_btn.setEnabled(has_selection)
         self.delete_btn.setEnabled(has_selection)
-
     def move_up(self):
         selected_rows = self.process_table.selectedItems()
         if not selected_rows:
@@ -2124,7 +2578,6 @@ class MainWindow(QMainWindow):
             self.process_file_list[current_row - 1], self.process_file_list[current_row]
         self.reorder_table()
         self.process_table.selectRow(current_row - 1)
-
     def _has_checked_errors(self):
         """检查是否有勾选的错误文件"""
         if not hasattr(self, "process_file_info") or not self.process_file_info:
@@ -2137,7 +2590,6 @@ class MainWindow(QMainWindow):
                 if item.checkState() == Qt.Checked:
                     return True
         return False
-
     def _update_error_state(self):
         """根据错误文件状态更新列可见性和页数复选框"""
         has_checked = self._has_checked_errors()
@@ -2147,7 +2599,6 @@ class MainWindow(QMainWindow):
             self.gen_pages_check.setChecked(False)
         else:
             self.gen_pages_check.setEnabled(True)
-
     def move_down(self):
         selected_rows = self.process_table.selectedItems()
         if not selected_rows:
@@ -2180,7 +2631,6 @@ class MainWindow(QMainWindow):
             self.process_file_list[current_row + 1], self.process_file_list[current_row]
         self.reorder_table()
         self.process_table.selectRow(current_row + 1)
-
     def delete_selected(self):
         rows = sorted(set(item.row() for item in self.process_table.selectedItems()), reverse=True)
         if not rows:
@@ -2199,7 +2649,6 @@ class MainWindow(QMainWindow):
             # 检查是否还有错误文件，若无则重新启用页数设置
             self._update_error_state()
             self.update_gen_file_list()
-
     def clear_list(self):
         reply = QMessageBox.question(self, "确认清空",
                                       "清空后无法处理文件。是不是你的文件夹选错了？请回到“文件名”标签重新选择文件夹。\n是否要继续清空列表？",
@@ -2211,7 +2660,6 @@ class MainWindow(QMainWindow):
             self._update_error_state()
             self.update_gen_file_list()
         self.update_button_state()
-
     def reorder_table(self):
         """重新排序表格序号（行号）"""
         row_count = self.process_table.rowCount()
@@ -2224,17 +2672,21 @@ class MainWindow(QMainWindow):
                 self.process_table.setVerticalHeaderItem(row, new_header)
         self.update_gen_file_list()
         self.update_button_state()
-
-
     def start_process(self):
         self.log_text.clear()
         self.log_message("开始排版...")
+        self.process_btn.setEnabled(False)
+        self.process_btn.setText("排版中...")
+        QApplication.processEvents()
         if self.process_table.rowCount() == 0:
             QMessageBox.warning(self, "警告", "文件列表为空，请先检查输入。")
+            self.process_btn.setEnabled(True)
+            self.process_btn.setText("一键排版")
             return
-
         if self.date_status_icon.text() != "\u221a":
             QMessageBox.warning(self, "警告", "请在\"标题\"标签页中点击\"检查日期\"按钮来检查！")
+            self.process_btn.setEnabled(True)
+            self.process_btn.setText("一键排版")
             return
         checked_paths = []
         for row in range(self.process_table.rowCount()):
@@ -2245,13 +2697,13 @@ class MainWindow(QMainWindow):
                     checked_paths.append(fullpath)
         if not checked_paths:
             QMessageBox.warning(self, "警告", "请至少勾选一个文件。")
+            self.process_btn.setEnabled(True)
+            self.process_btn.setText("一键排版")
             return
-
         output_dir = self.output_folder_edit.text().strip()
         if not output_dir:
             output_dir = os.path.dirname(checked_paths[0])
         os.makedirs(output_dir, exist_ok=True)
-
         # 收集期望页数
         expected_pages = {}
         if self.gen_pages_check.isChecked() and hasattr(self, 'gen_file_layout'):
@@ -2264,137 +2716,30 @@ class MainWindow(QMainWindow):
                         if child and child.widget() and isinstance(child.widget(), QSpinBox):
                             expected_pages[i] = child.widget().value()
                             break
+        output_format_index = self.output_format.currentIndex()
+        # 创建GUI设置快照（确保背景线程不访问界面控件）
+        self.worker = FormatWorker(
+            checked_paths, output_dir, expected_pages,
+            output_format_index,
+            self.gen_pages_check.isChecked(),
+            self
+        )
+        self.worker.log_signal.connect(self.log_message)
+        self.worker.finished_signal.connect(self._on_format_finished)
+        self.worker.start()
 
-        from docx_formatter import DocumentFormatter, SourceParseError
-        formatter = DocumentFormatter(self)
-        success = 0
-        fail = 0
-        fail_msgs = []
-        output_paths = []
-        for src in checked_paths:
-            basename = os.path.basename(src)
-            self.log_message(f"正在处理：{basename}")
-            QApplication.processEvents()
-            try:
-                out = formatter.process_file(src, output_dir)
-                output_paths.append(out)
-                success += 1
-                self.log_message(f"已完成 => {os.path.basename(out)}")
-            except SourceParseError as e:
-                fail += 1
-                output_paths.append(None)
-                msg = f"文件名格式不匹配 - {str(e)}"
-                fail_msgs.append(f"{basename}: {msg}")
-                self.log_message(f"失败：{basename} - {msg}")
-            except Exception as e:
-                fail += 1
-                output_paths.append(None)
-                msg = str(e)
-                fail_msgs.append(f"{basename}: {msg}")
-                self.log_message(f"失败：{basename} - {msg}")
-            QApplication.processEvents()
-
-        # 页数校验
-        mismatches = []
-        if self.gen_pages_check.isChecked() and expected_pages and output_paths:
-            self.log_message("正在验证页数...")
-            QApplication.processEvents()
-            import pythoncom
-            import win32com.client
-            pythoncom.CoInitialize()
-            word_app = None
-            try:
-                try:
-                    word_app = win32com.client.Dispatch("Kwps.Application")
-                except:
-                    try:
-                        word_app = win32com.client.Dispatch("wps.Application")
-                    except:
-                        word_app = win32com.client.Dispatch("Word.Application")
-                word_app.Visible = False
-                word_app.DisplayAlerts = 0
-                word_app.ScreenUpdating = False
-                for idx, out in enumerate(output_paths):
-                    if out is None:
-                        continue
-                    actual_pages = -1
-                    try:
-                        doc = word_app.Documents.Open(out)
-                        doc.Repaginate()
-                        actual_pages = doc.ComputeStatistics(2)
-                        doc.Close()
-                    except Exception:
-                        actual_pages = -1
-                    expected = expected_pages.get(idx, -1)
-                    if expected > 0 and actual_pages > 0 and actual_pages != expected:
-                        mismatches.append((os.path.basename(out), expected, actual_pages))
-                        self.log_message(f"页数不符：{os.path.basename(out)} 期望{expected}页，实际{actual_pages}页")
-            except Exception as e:
-                self.log_message(f"无法初始化Word/WPS进行页数校验：{str(e)}")
-            finally:
-                if word_app:
-                    word_app.Quit()
-                pythoncom.CoUninitialize()
-
-        # PDF 导出
-        output_format = self.output_format.currentText()
-        if ".pdf" in output_format or "两者" in output_format:
-            pdf_files_exist = sum(1 for o in output_paths if o is not None)
-            self.log_message('正在导出PDF...')
-            QApplication.processEvents()
-            import pythoncom
-            import win32com.client
-            pythoncom.CoInitialize()
-            pdf_word = None
-            pdf_success = 0
-            pdf_fail = 0
-            try:
-                try:
-                    pdf_word = win32com.client.Dispatch("Kwps.Application")
-                except:
-                    try:
-                        pdf_word = win32com.client.Dispatch("wps.Application")
-                    except:
-                        pdf_word = win32com.client.Dispatch("Word.Application")
-                pdf_word.Visible = False
-                pdf_word.DisplayAlerts = 0
-                pdf_word.ScreenUpdating = False
-                for out in output_paths:
-                    if out is None:
-                        continue
-                    try:
-                        pdf_path = out.replace('.docx', '.pdf')
-                        doc = pdf_word.Documents.Open(out)
-                        doc.SaveAs(pdf_path, FileFormat=17)
-                        doc.Close()
-                        pdf_success += 1
-                        self.log_message(f"PDF已生成：{os.path.basename(pdf_path)}")
-                    except Exception as e:
-                        pdf_fail += 1
-                        self.log_message(f"PDF导出失败：{os.path.basename(out)} - {str(e)}")
-            except Exception as e:
-                self.log_message(f"无法初始化Word/WPS进行PDF导出：{str(e)}")
-            finally:
-                if pdf_word:
-                    pdf_word.Quit()
-                pythoncom.CoUninitialize()
-            self.log_message(f"PDF导出完成：成功 {pdf_success} 个，失败 {pdf_fail} 个。")
-            # 当只选PDF时删除中间.docx
-            if output_format == "Portable Document Format（.pdf）":
-                deleted = 0
-                for out in output_paths:
-                    if out and os.path.exists(out):
-                        try:
-                            os.remove(out)
-                            deleted += 1
-                        except Exception:
-                            pass
-                if deleted > 0:
-                    self.log_message(f"已删除 {deleted} 个临时.docx文件")
-
-
-        # 结果汇总
-        result_lines = [f"排版完成：成功 {success} 个，失败 {fail} 个。"]
+    def _on_format_finished(self, results):
+        """排版完成后回调"""
+        success = results.get('success', 0)
+        fail = results.get('fail', 0)
+        fail_msgs = results.get('fail_msgs', [])
+        mismatches = results.get('mismatches', [])
+        self.process_btn.setEnabled(True)
+        self.process_btn.setText("一键排版")
+        QApplication.processEvents()
+        from datetime import datetime
+        now = datetime.now().strftime('%H:%M:%S')
+        result_lines = [f'[{now}] 排版完成：成功 {success} 个，失败 {fail} 个。']
         if fail_msgs:
             result_lines.append("")
             result_lines.append("失败详情：")
@@ -2404,20 +2749,17 @@ class MainWindow(QMainWindow):
             result_lines.append(f"页数不符（共{len(mismatches)}个）：")
             for name, exp, act in mismatches:
                 result_lines.append(f"  {name}：期望{exp}页，实际{act}页")
-
         msg = "\n".join(result_lines)
         self.log_message(msg)
-
         if mismatches:
-            detail_lines = [f"  {name}：期望{exp}页，实际{act}页" for name, exp, act in mismatches]
-            detail = "\n".join(detail_lines)
-            QMessageBox.warning(self, "排版完成（有页数警告）",
-                f"排版完成：成功 {success} 个，失败 {fail} 个。\n\n"
-                f"以下 {len(mismatches)} 个文件的页数与期望不符：\n{detail}")
+            html = '<h3>排版完成（有页数警告）</h3>'
+            html += f'<p>成功 {success} 个，失败 {fail} 个<br>'
+            html += f'以下 {len(mismatches)} 个文件的页数与期望不符：</p>'
+            html += '<p>' + '<br>'.join([f'{name}：期望{exp}页，实际{act}页' for name, exp, act in mismatches]) + '</p>'
+            self.show_scrollable_message('排版结果', html)
         else:
-            QMessageBox.information(self, "排版结果",
-                f"排版完成：成功 {success} 个，失败 {fail} 个。")
-
+            html = f'<h3>排版完成</h3><p>成功 {success} 个，失败 {fail} 个</p>'
+            self.show_scrollable_message('排版结果', html)
     def log_message(self, msg):
         """向日志框追加消息"""
         try:
@@ -2429,16 +2771,31 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-
+    def export_log(self):
+        """导出排版日志为txt文件"""
+        import os
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        from PyQt5.QtCore import QDateTime
+        now_str = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
+        default_name = "试卷排版工具V2.5_排版日志_" + now_str + ".txt"
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "导出排版日志", default_name, "文本文件 (*.txt)"
+        )
+        if not filepath:
+            return
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(self.log_text.toPlainText())
+            QMessageBox.information(self, "导出成功", f"排版日志已保存到：\n{filepath}")
+        except Exception as e:
+            QMessageBox.critical(self, "导出失败", f"保存日志时出错：\n{str(e)}")
     def pickColor(self, btn):
         color = QColorDialog.getColor()
         if color.isValid():
             btn.setStyleSheet(f"background-color: {color.name()};")
             btn.setProperty("color", color)
-
     def validate_title_inputs(self):
         return True
-
     def checkDates(self):
         start = self.start_date.date()
         end = self.end_date.date()
@@ -2451,18 +2808,23 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "日期错误", "结束日期必须大于开始日期")
             self.setDateStatusIcon(False)
             return
-
         # 统计已加载文件数量
-        file_count = len(self.process_file_list)
-
+        # 计算文件最大序号（支持不连续文件）
+        max_seq = 0
+        for item in self.process_file_list:
+            try:
+                s = int(item[1])
+                if s > max_seq:
+                    max_seq = s
+            except ValueError:
+                pass
+        file_count = max(max_seq, len(self.process_file_list))
         if file_count == 0:
             QMessageBox.warning(self, "日期检查", "没有加载文件，无法计算日期\n请先在\"文件名\"标签页中加载文件")
             self.setDateStatusIcon(False)
             return
-
         mode = self.cycle_type_combo.currentText()
         dates = []
-
         if mode == "按正常工作日安排":
             # 周一至周五工作，周六周日休息
             current = QDate(start)
@@ -2503,7 +2865,6 @@ class MainWindow(QMainWindow):
                         if cycle_pos >= total_cycle:
                             cycle_pos = 0
                     current = current.addDays(1)
-
         last_date = dates[-1]
         if end < last_date:
             QMessageBox.warning(self, "日期错误",
@@ -2512,26 +2873,33 @@ class MainWindow(QMainWindow):
                 f"请将结束日期设置为 {last_date.toString('yyyy-MM-dd')} 或之后。")
             self.setDateStatusIcon(False)
             return
-
         # 生成日期预览
         date_preview = []
         weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-        for idx, d in enumerate(dates):
+        for idx in range(len(self.process_file_list)):
             seq = self.process_file_list[idx][1] if idx < len(self.process_file_list) else '?'
+            try:
+                seq_num = int(seq)
+            except ValueError:
+                seq_num = 0
+            date_idx = (seq_num - 1) if seq_num > 0 else idx
+            if date_idx < len(dates):
+                d = dates[date_idx]
+            else:
+                d = dates[-1]
             wd = weekday_names[d.dayOfWeek() - 1]
-            date_preview.append(f"  第{idx+1}份 ({seq}): {d.toString('yyyy-MM-dd')} ({wd})")
+            date_preview.append(f'  第{idx+1}份 ({seq}): ' + d.toString('yyyy-MM-dd') + f' ({wd})')
         preview_str = "\n".join(date_preview)
-
         self.setDateStatusIcon(True)
-        QMessageBox.information(self, "日期检查",
-            f"日期设置有效\n\n"
-            f"开始日期：{start.toString('yyyy-MM-dd')}\n"
-            f"结束日期：{end.toString('yyyy-MM-dd')}\n"
-            f"文件数量：{file_count}\n"
-            f"最后文件日期：{last_date.toString('yyyy-MM-dd')}\n"
-            f"日期计算方式：{mode}\n\n"
-            f"日期安排预览：\n{preview_str}")
-
+        # ===== 改用可滚动对话框 =====
+        preview_lines = preview_str.split("\n")
+        html = '<h3>日期设置有效</h3>'
+        html += f'<p><b>开始日期：</b>{start.toString("yyyy-MM-dd")}<br>'
+        html += f'<b>结束日期：</b>{end.toString("yyyy-MM-dd")}<br>'
+        html += f'<b>文件数量：</b>{file_count}</p>'
+        html += '<hr><h4>日期安排预览：</h4>'
+        html += '<p>' + '<br>'.join(preview_lines) + '</p>'
+        self.show_scrollable_message('日期检查', html)
     def setDateStatusIcon(self, success):
         if success:
             self.date_status_icon.setText("√")
@@ -2539,9 +2907,7 @@ class MainWindow(QMainWindow):
         else:
             self.date_status_icon.setText("×")
             self.date_status_icon.setStyleSheet("color: red; font-size: 16px; font-weight: bold;")
-
     # ==================== 副标题录入对话框 ====================
-
     def openExaminerDialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("出题人、审题人录入")
@@ -2572,7 +2938,6 @@ class MainWindow(QMainWindow):
         if self.reviewers:
             self.reviewer_text.setText("\n".join(self.reviewers))
         dialog.exec_()
-
     # ==================== 标题功能开关控制 ====================
     def _toggle_groupbox_by_title(self, enabled, keyword):
         layout = self.tab_title.layout()
@@ -2584,21 +2949,16 @@ class MainWindow(QMainWindow):
                 if keyword in item.widget().title():
                     item.widget().setVisible(enabled)
                     break
-
     def on_header_enable_toggled(self, enabled):
         self._toggle_groupbox_by_title(enabled, '题头')
-
     def on_main_enable_toggled(self, enabled):
         self._toggle_groupbox_by_title(enabled, '主标题')
-
     def on_sub_enable_toggled(self, enabled):
         self._toggle_groupbox_by_title(enabled, '副标题')
-
     def on_sub_features_toggled(self, enabled):
         """控制副标题内部功能控件的显示/隐藏"""
         if hasattr(self, 'sub_features_container'):
             self.sub_features_container.setVisible(enabled)
-
     def saveExaminerData(self, dialog):
         examiners = [line.strip() for line in self.examiner_text.toPlainText().splitlines() if line.strip()]
         reviewers = [line.strip() for line in self.reviewer_text.toPlainText().splitlines() if line.strip()]
@@ -2606,9 +2966,7 @@ class MainWindow(QMainWindow):
         self.reviewers = reviewers
         dialog.accept()
         QMessageBox.information(self, "保存成功", f"已保存 {len(examiners)} 位出题人，{len(reviewers)} 位审题人。")
-
     # ==================== 预设配置保存/加载 ====================
-
     def _get_color_name(self, btn):
         """从颜色按钮的样式表中提取颜色名称"""
         import re
@@ -2617,7 +2975,6 @@ class MainWindow(QMainWindow):
         if m:
             return m.group(1)
         return "black"
-
     def _set_color_btn(self, btn, color_name):
         """设置颜色按钮的背景色"""
         from PyQt5.QtGui import QColor
@@ -2644,7 +3001,6 @@ class MainWindow(QMainWindow):
         elif cls_name == 'QLabel':
             return {'text': widget.text(), 'styleSheet': widget.styleSheet()}
         return None
-
     def _set_widget_value(self, widget, value):
         """设置控件值，忽略失败"""
         if value is None:
@@ -2675,25 +3031,20 @@ class MainWindow(QMainWindow):
                 widget.setStyleSheet(value.get('styleSheet', ''))
         except Exception:
             pass  # 单个控件加载失败不中断
-
     def savePreset(self):
         """保存当前所有设置到JSON文件"""
         import json
         from PyQt5.QtWidgets import QFileDialog, QMessageBox
         from PyQt5.QtCore import QDate, QDateTime
         from PyQt5.QtWidgets import QLabel, QSpinBox
-
         now_str = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
         default_name = "试卷排版工具V2.5_排版预设配置_" + now_str + ".json"
-
         filepath, _ = QFileDialog.getSaveFileName(
             self, "保存预设配置", default_name, "JSON文件 (*.json)"
         )
         if not filepath:
             return
-
         data = {}
-
         # ---- 文件名Tab ----
         tab_widgets_file = [
             ('folder_edit', self.folder_edit),
@@ -2712,7 +3063,6 @@ class MainWindow(QMainWindow):
         ]
         for name, w in tab_widgets_file:
             data[name] = self._get_widget_value(w)
-
         # ---- 标题Tab ----
         # Header
         tab_widgets_title_header = [
@@ -2729,7 +3079,6 @@ class MainWindow(QMainWindow):
         ]
         for name, w in tab_widgets_title_header:
             data[name] = self._get_widget_value(w)
-
         # Main title
         tab_widgets_title_main = [
             ('enable_main_cb', self.enable_main_cb),
@@ -2747,7 +3096,6 @@ class MainWindow(QMainWindow):
         ]
         for name, w in tab_widgets_title_main:
             data[name] = self._get_widget_value(w)
-
         # Sub title
         tab_widgets_title_sub = [
             ('enable_sub_cb', self.enable_sub_cb),
@@ -2762,7 +3110,6 @@ class MainWindow(QMainWindow):
         ]
         for name, w in tab_widgets_title_sub:
             data[name] = self._get_widget_value(w)
-
         # Sub features
         tab_widgets_sub_features = [
             ('cycle_type_combo', self.cycle_type_combo),
@@ -2772,15 +3119,12 @@ class MainWindow(QMainWindow):
             ('enable_date_cb', self.enable_date_cb),
             ('rest_do', self.rest_do),
             ('rest_rest', self.rest_rest),
-
         ]
         for name, w in tab_widgets_sub_features:
             data[name] = self._get_widget_value(w)
-
         # Examiners and reviewers
         data['examiners'] = self.examiners
         data['reviewers'] = self.reviewers
-
         # ---- 页面Tab ----
         tab_widgets_page = [
             ('margin_top', self.margin_top),
@@ -2789,6 +3133,12 @@ class MainWindow(QMainWindow):
             ('margin_right', self.margin_right),
             ('header_mode', self.header_mode),
             ('header_text_edit', self.header_text_edit),
+            ('header_footer_font', self.header_footer_font),
+            ('header_footer_font_size', self.header_footer_font_size),
+            ('header_footer_bold', self.header_footer_bold),
+            ('header_footer_underline', self.header_footer_underline),
+            ('header_footer_italic', self.header_footer_italic),
+            ('header_footer_color_btn', self.header_footer_color_btn),
             ('insert_page_check', self.insert_page_check),
             ('page_position', self.page_position),
             ('page_style', self.page_style),
@@ -2805,12 +3155,10 @@ class MainWindow(QMainWindow):
         ]
         for name, w in tab_widgets_page:
             data[name] = self._get_widget_value(w)
-
         # ---- 处理Tab ----
         data['output_format'] = self._get_widget_value(self.output_format)
         data['gen_pages_check'] = self._get_widget_value(self.gen_pages_check)
         data['log_text'] = {'text': '', 'styleSheet': self.log_text.styleSheet()}
-
         # 保存每个文件的期望页数
         file_pages = {}
         if hasattr(self, 'gen_file_layout') and self.gen_file_layout is not None:
@@ -2832,7 +3180,6 @@ class MainWindow(QMainWindow):
                         fname = filename_label.toolTip().strip()
                         file_pages[fname] = pages_spin.value()
         data['gen_file_pages'] = file_pages
-
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -2841,28 +3188,23 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "保存成功", f"预设配置已保存到：{filepath}")
         except Exception as e:
             QMessageBox.critical(self, "保存失败", f"保存预设时出错：\n{str(e)}")
-
     def loadPreset(self):
         """从JSON文件加载预设配置"""
         import json
         from PyQt5.QtWidgets import QFileDialog, QMessageBox
         from PyQt5.QtCore import QDate
-
         filepath, _ = QFileDialog.getOpenFileName(
             self, "打开预设配置", "", "JSON文件 (*.json)"
         )
         if not filepath:
             return
-
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
             QMessageBox.critical(self, "读取失败", f"无法读取配置文件：\n{str(e)}")
             return
-
         failed_items = []
-
         # 执行加载
         for name, value in data.items():
             if name in ('examiners', 'reviewers', 'date_status_icon', 'footer_left_edit', 'footer_right_edit', 'gen_file_pages', 'preset_source_files', 'header_left_edit', 'header_right_edit', 'gen_pages_check', 'enable_rest_cb'):
@@ -2875,13 +3217,11 @@ class MainWindow(QMainWindow):
                 self._set_widget_value(widget, value)
             except Exception:
                 failed_items.append(name)
-
         # 加载出题人、审题人
         if 'examiners' in data:
             self.examiners = list(data['examiners'])
         if 'reviewers' in data:
             self.reviewers = list(data['reviewers'])
-
         # 存储期望页数，等生成文件列表后恢复
         if 'gen_file_pages' in data and data['gen_file_pages']:
             self._preset_gen_file_pages = data['gen_file_pages']
@@ -2890,11 +3230,9 @@ class MainWindow(QMainWindow):
             self.gen_pages_check.blockSignals(True)
             self.gen_pages_check.setChecked(bool(data['gen_pages_check']))
             self.gen_pages_check.blockSignals(False)
-
         # 更新config label
         self.preset_config_path = filepath
         self.config_path_label.setText(f"配置文件：{filepath}")
-
         # 报告加载结果
         if not failed_items:
             QMessageBox.information(self, "加载成功",
@@ -2903,11 +3241,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "部分加载失败",
                                 f"预设配置已从以下文件加载：\n{filepath}\n\n"
                                 f"但以下 {len(failed_items)} 项加载失败：\n" + "、".join(failed_items))
+        # 确保日期格式下拉框可见性与复选框一致
+        self.orig_date_format.setVisible(self.orig_date_check.isChecked())
+        self.gen_date_format.setVisible(self.gen_date_check.isChecked())
 
     def closeEvent(self, event):
         event.accept()
-
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()

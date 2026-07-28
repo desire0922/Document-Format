@@ -849,12 +849,20 @@ class DocumentFormatter:
         if not fmt:
             return None
         pattern = re.escape(fmt)
-        pattern = pattern.replace('yyyy', r'(\d{4})')
-        pattern = pattern.replace('yy', r'(\d{2})')
-        pattern = pattern.replace('MM', r'(\d{2})')
-        pattern = pattern.replace('M', r'(\d{1,2})')
-        pattern = pattern.replace('dd', r'(\d{2})')
-        pattern = pattern.replace('d', r'(\d{1,2})')
+        # 用不可见字符做临时占位，避免替换已生成的正则中的字母
+        # 用控制字符做临时占位符，避免后续替换干扰
+        pattern = pattern.replace('yyyy', '\x01')
+        pattern = pattern.replace('yy', '\x02')
+        pattern = pattern.replace('MM', '\x03')
+        pattern = pattern.replace('dd', '\x05')
+        pattern = pattern.replace('M', '\x04')
+        pattern = pattern.replace('d', '\x06')
+        pattern = pattern.replace('\x01', r'(\d{4})')
+        pattern = pattern.replace('\x02', r'(\d{2})')
+        pattern = pattern.replace('\x03', r'(\d{2})')
+        pattern = pattern.replace('\x05', r'(\d{2})')
+        pattern = pattern.replace('\x04', r'(\d{1,2})')
+        pattern = pattern.replace('\x06', r'(\d{1,2})')
         return pattern
 
     def _format_date_obj(self, date_obj, fmt):
